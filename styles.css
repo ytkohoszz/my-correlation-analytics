@@ -1,8 +1,97 @@
-/*
+.modal.mod-correlation-report {
+  width: 90vw !important;
+  max-width: 680px !important;
+  max-height: 85vh !important;
+  padding: 18px 22px !important;
+  border-radius: 12px !important;
+  background: var(--background-secondary) !important;
+  border: 1px solid var(--background-modifier-border) !important;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.mca-head {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
 
-If your plugin does not need CSS, delete this file.
+.mca-head h2 {
+  margin: 0 0 4px 0 !important;
+  font-size: 1.15rem;
+}
 
-*/
+.mca-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.mca-sec-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-normal);
+  margin: 14px 0 8px 0 !important;
+}
+
+.mca-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mca-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mca-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mca-card-label {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--text-normal);
+}
+
+.mca-delta-badge {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mca-delta-badge.is-up {
+  color: #4aab80;
+  background: rgba(74, 171, 128, 0.12);
+  border-color: rgba(74, 171, 128, 0.4);
+}
+
+.mca-delta-badge.is-down {
+  color: #d85b57;
+  background: rgba(216, 91, 87, 0.12);
+  border-color: rgba(216, 91, 87, 0.4);
+}
+
+.mca-card-desc {
+  font-size: 0.74rem;
+  line-height: 1.32;
+  color: var(--text-muted);
+}
+
+.mca-empty {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  padding: 8px;
+}
