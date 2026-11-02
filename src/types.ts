@@ -1,11 +1,11 @@
 export interface DailyRecord {
   dateISO: string;
-  score: number | null; // оценка_дня (1-10)
-  energy: number | null; // энергия (1-10)
-  sleepHours: number | null; // сон_часов
-  calories: number | null; // калории_ккал
-  weight: number | null; // вес_кг
-  pagesRead: number | null; // страниц_прочитано
+  score: number | null;
+  energy: number | null;
+  sleepHours: number | null;
+  calories: number | null;
+  weight: number | null;
+  pagesRead: number | null;
   habits: {
     nofap: boolean | null;
     тренировка: boolean | null;
@@ -15,13 +15,21 @@ export interface DailyRecord {
   };
 }
 
+export interface ScatterPoint {
+  x: number;
+  y: number;
+  dateISO: string;
+}
+
 export interface MetricCorrelation {
+  id: string;
   metricA: string;
   metricB: string;
   r: number; // -1.0 .. 1.0
   sampleCount: number;
   label: string;
   interpretation: string;
+  points: ScatterPoint[];
 }
 
 export interface HabitImpact {
@@ -30,7 +38,7 @@ export interface HabitImpact {
   targetMetric: "score" | "energy";
   avgWhenTrue: number;
   avgWhenFalse: number;
-  delta: number; // avgWhenTrue - avgWhenFalse
+  delta: number;
   countTrue: number;
   countFalse: number;
   summary: string;

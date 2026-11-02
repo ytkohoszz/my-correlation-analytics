@@ -1,40 +1,78 @@
 import { App, Modal } from "obsidian";
-import { AnalyticsReport } from "./types";
+import { AnalyticsReport, DailyRecord } from "./types";
+import { analyzeRecords } from "./engine";
+import { renderScatterPlotSvg } from "./scatter-plot";
 
 export class CorrelationReportModal extends Modal {
-  private report: AnalyticsReport;
+  private allRecords: DailyRecord[];
+  private currentDays: number = 30;
+  private expandedCorrelationId: string | null = null;
 
-  constructor(app: App, report: AnalyticsReport) {
+  constructor(app: App, allRecords: DailyRecord[], initialDays: number = 30) {
     super(app);
-    this.report = report;
+    this.allRecords = allRecords;
+    this.currentDays = initialDays;
   }
 
   onOpen(): void {
-    const { contentEl, modalEl } = this;
+    const { modalEl } = this;
     modalEl.addClass("mod-correlation-report");
+    this.renderModal();
+  }
+
+  private renderModal(): void {
+    const { contentEl } = this;
     contentEl.empty();
 
-    const title = contentEl.createDiv({ cls: "mca-head" });
-    title.createEl("h2", { text: "📊 Аналитика корреляций ежедневника" });
-    title.createSpan({
-      cls: "mca-sub",
-      text: `За последние ${this.report.periodDays} дней (${this.report.totalRecords} записей)`
+    const report: AnalyticsReport = analyzeRecords(this.allRecords, this.currentDays);
+
+    // Шапка и переключатель периодов
+    const head = contentEl.createDiv({ cls: "mca-head" });
+    const titleRow = head.createDiv({ cls: "mca-title-row" });
+    titleRow.createEl("h2", { text: "📊 Аналитика корреляций ежедневника" });
+
+    const tabsRow = head.createDiv({ cls: "mca-tabs-row" });
+    const periods: Array<{ days: number; label: string }> = [
+      { days: 30, label: "30 дней" },
+      { days: 90, label: "90 дней" },
+      { days: 0, label: "Все время" }
+    ];
+
+    periods.forEach(p => {
+      const isAct = this.currentDays === p.days;
+      const tabBtn = tabsRow.createEl("button", {
+        cls: `mca-tab-btn ${isAct ? "is-active" : ""}`,
+        text: p.label,
+        attr: { type: "button" }
+      });
+      tabBtn.onclick = () => {
+        if (this.currentDays !== p.days) {
+          this.currentDays = p.days;
+          this.expandedCorrelationId = null;
+          this.renderModal();
+        }
+      };
     });
 
-    // 1. Секция влияния привычек
-    contentEl.createEl("h3", { text: "⚡ Влияние привычек на самочувствие", cls: "mca-sec-title" });
-    const habitsBox = contentEl.createDiv({ cls: "mca-cards-grid" });
+    head.createDiv({
+      cls: "mca-sub",
+      text: `Выборка: ${report.totalRecords} дней записи`
+    });
 
-    if (this.report.topHabitImpacts.length === 0) {
-      habitsBox.createDiv({ cls: "mca-empty", text: "Недостаточно данных для сравнения привычек." });
+    // 1. Привычки
+    contentEl.createEl("h3", { text: "⚡ Наблюдаемые различия привычек", cls: "mca-sec-title" });
+    const habitsGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
+
+    if (report.topHabitImpacts.length === 0) {
+      habitsGrid.createDiv({ cls: "mca-empty", text: "Недостаточно данных для сравнения привычек за выбранный период." });
     } else {
-      this.report.topHabitImpacts.forEach(item => {
-        const card = habitsBox.createDiv({ cls: "mca-card" });
+      report.topHabitImpacts.forEach(item => {
+        const card = habitsGrid.createDiv({ cls: "mca-card" });
         const topRow = card.createDiv({ cls: "mca-card-top" });
         topRow.createSpan({ cls: "mca-card-label", text: `${item.habitName} → ${item.targetMetric === "score" ? "Оценка" : "Энергия"}` });
 
         const isPositive = item.delta > 0;
-        const deltaBadge = topRow.createSpan({
+        topRow.createSpan({
           cls: `mca-delta-badge ${isPositive ? "is-up" : "is-down"}`,
           text: (isPositive ? "+" : "") + item.delta.toFixed(1)
         });
@@ -43,24 +81,41 @@ export class CorrelationReportModal extends Modal {
       });
     }
 
-    // 2. Секция парных корреляций
-    contentEl.createEl("h3", { text: "📈 Взаимосвязи числовых показателей (Пирсон r)", cls: "mca-sec-title" });
-    const corrBox = contentEl.createDiv({ cls: "mca-cards-grid" });
+    // 2. Взаимосвязи показателей и Scatter plot
+    contentEl.createEl("h3", { text: "📈 Связи показателей (нажми для графика рассеяния)", cls: "mca-sec-title" });
+    const corrGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
 
-    if (this.report.topCorrelations.length === 0) {
-      corrBox.createDiv({ cls: "mca-empty", text: "Заметных линейных корреляций пока не выявлено." });
+    if (report.topCorrelations.length === 0) {
+      corrGrid.createDiv({ cls: "mca-empty", text: "Заметных линейных корреляций за этот период не выявлено." });
     } else {
-      this.report.topCorrelations.forEach(item => {
-        const card = corrBox.createDiv({ cls: "mca-card" });
+      report.topCorrelations.forEach(item => {
+        const isExpanded = this.expandedCorrelationId === item.id;
+        const card = corrGrid.createDiv({ cls: `mca-card is-interactive ${isExpanded ? "is-expanded" : ""}` });
+
         const topRow = card.createDiv({ cls: "mca-card-top" });
         topRow.createSpan({ cls: "mca-card-label", text: item.label });
 
-        const rBadge = topRow.createSpan({
+        topRow.createSpan({
           cls: "mca-delta-badge",
           text: `r = ${item.r > 0 ? "+" : ""}${item.r.toFixed(2)}`
         });
 
-        card.createDiv({ cls: "mca-card-desc", text: `${item.interpretation} (${item.sampleCount} совпадений)` });
+        card.createDiv({
+          cls: "mca-card-desc",
+          text: `${item.interpretation} (${item.sampleCount} дн.) · ${isExpanded ? "свернуть ▲" : "график ▾"}`
+        });
+
+        card.onclick = () => {
+          this.expandedCorrelationId = isExpanded ? null : item.id;
+          this.renderModal();
+        };
+
+        if (isExpanded) {
+          const plotHost = card.createDiv({ cls: "mca-plot-host" });
+          plotHost.onclick = e => e.stopPropagation();
+          const svg = renderScatterPlotSvg(item.points, item.metricA, item.metricB, item.r);
+          plotHost.appendChild(svg);
+        }
       });
     }
   }

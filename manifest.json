@@ -1,9 +1,9 @@
 {
-  "id": "my-correlation-analytics",
-  "name": "Correlation Analytics",
-  "version": "0.1.0",
-  "minAppVersion": "1.4.0",
-  "description": "Математический анализ корреляций привычек, сна и продуктивности в ежедневнике Obsidian.",
-  "author": "Mersinho Hecke",
-  "isDesktopOnly": false
+	"id": "my-correlation-analytics",
+	"name": "Correlation Analytics",
+	"version": "0.2.0",
+	"minAppVersion": "1.4.0",
+	"description": "Математический анализ корреляций привычек, сна и продуктивности в ежедневнике Obsidian.",
+	"author": "Mersinho Hecke",
+	"isDesktopOnly": false
 }
