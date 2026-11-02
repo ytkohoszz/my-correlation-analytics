@@ -59,8 +59,8 @@ export class CorrelationReportModal extends Modal {
       text: `Выборка: ${report.totalRecords} дней записи`
     });
 
-    // 1. Привычки
-    contentEl.createEl("h3", { text: "⚡ Наблюдаемые различия привычек", cls: "mca-sec-title" });
+    // 1. Привычки внутри дня
+    contentEl.createEl("h3", { text: "⚡ Наблюдаемые различия привычек (в тот же день)", cls: "mca-sec-title" });
     const habitsGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
 
     if (report.topHabitImpacts.length === 0) {
@@ -81,7 +81,28 @@ export class CorrelationReportModal extends Modal {
       });
     }
 
-    // 2. Взаимосвязи показателей и Scatter plot
+    // 2. Лаг-анализ: отложенные эффекты на следующий день
+    contentEl.createEl("h3", { text: "⏳ Отложенные эффекты (на следующий день t → t+1)", cls: "mca-sec-title" });
+    const lagGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
+
+    if (report.lagImpacts.length === 0) {
+      lagGrid.createDiv({ cls: "mca-empty", text: "Недостаточно пар последовательных дней для расчёта лаг-эффекта." });
+    } else {
+      report.lagImpacts.forEach(lag => {
+        const card = lagGrid.createDiv({ cls: "mca-card is-lag-card" });
+        const topRow = card.createDiv({ cls: "mca-card-top" });
+        topRow.createSpan({ cls: "mca-card-label", text: `${lag.factorLabel} → ${lag.targetLabel}` });
+
+        topRow.createSpan({
+          cls: `mca-delta-badge ${lag.isPositive ? "is-up" : "is-down"}`,
+          text: lag.deltaOrR
+        });
+
+        card.createDiv({ cls: "mca-card-desc", text: `${lag.description} (${lag.sampleCount} пар дней)` });
+      });
+    }
+
+    // 3. Взаимосвязи показателей и Scatter plot
     contentEl.createEl("h3", { text: "📈 Связи показателей (нажми для графика рассеяния)", cls: "mca-sec-title" });
     const corrGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
 

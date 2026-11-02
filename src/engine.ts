@@ -1,4 +1,4 @@
-import { DailyRecord, MetricCorrelation, HabitImpact, AnalyticsReport, ScatterPoint } from "./types";
+import { DailyRecord, MetricCorrelation, HabitImpact, AnalyticsReport, ScatterPoint, LagImpact } from "./types";
 
 export function pearsonCorrelation(xs: number[], ys: number[]): number | null {
   if (xs.length !== ys.length || xs.length < 4) return null;
@@ -53,11 +53,19 @@ const HABIT_NAMES: Record<string, string> = {
   диета: "Диета"
 };
 
-export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): AnalyticsReport {
-  const sorted = [...records].sort((a, b) => b.dateISO.localeCompare(a.dateISO));
-  const slice = limitDays > 0 ? sorted.slice(0, limitDays) : sorted;
+function parseDateMs(iso: string): number {
+  const parts = iso.split("-").map(Number);
+  if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+    return Date.UTC(parts[0], parts[1] - 1, parts[2]);
+  }
+  return 0;
+}
 
-  // 1. Корреляции числовых показателей с набором точек для графика
+export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): AnalyticsReport {
+  const sortedDesc = [...records].sort((a, b) => b.dateISO.localeCompare(a.dateISO));
+  const slice = limitDays > 0 ? sortedDesc.slice(0, limitDays) : sortedDesc;
+
+  // 1. Корреляции внутри дня
   const correlations: MetricCorrelation[] = [];
 
   for (let i = 0; i < NUMERIC_METRICS.length; i++) {
@@ -97,7 +105,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
 
   correlations.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
 
-  // 2. Влияние привычек
+  // 2. Влияние привычек внутри дня
   const habitImpacts: HabitImpact[] = [];
   const targets: Array<{ key: "score" | "energy"; name: string }> = [
     { key: "score", name: "Оценку дня" },
@@ -141,10 +149,82 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
 
   habitImpacts.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
+  // 3. Лаг-анализ со сдвигом в 1 день (t -> t+1)
+  const lagImpacts: LagImpact[] = [];
+  const ascSorted = [...slice].sort((a, b) => a.dateISO.localeCompare(b.dateISO));
+  const consecutivePairs: Array<{ cur: DailyRecord; next: DailyRecord }> = [];
+
+  for (let i = 0; i < ascSorted.length - 1; i++) {
+    const cur = ascSorted[i]!;
+    const next = ascSorted[i + 1]!;
+    const diffDays = Math.round((parseDateMs(next.dateISO) - parseDateMs(cur.dateISO)) / 86400000);
+    if (diffDays === 1) {
+      consecutivePairs.push({ cur, next });
+    }
+  }
+
+  if (consecutivePairs.length >= 5) {
+    // Влияние привычек дня t на энергию и оценку дня t+1
+    for (const [hKey, hName] of Object.entries(HABIT_NAMES)) {
+      for (const t of targets) {
+        const trueNext: number[] = [];
+        const falseNext: number[] = [];
+
+        consecutivePairs.forEach(({ cur, next }) => {
+          const habitVal = cur.habits[hKey as keyof DailyRecord["habits"]];
+          const nextVal = next[t.key];
+          if (typeof habitVal === "boolean" && nextVal !== null) {
+            if (habitVal) trueNext.push(nextVal);
+            else falseNext.push(nextVal);
+          }
+        });
+
+        if (trueNext.length >= 3 && falseNext.length >= 2) {
+          const avgTrue = trueNext.reduce((a, b) => a + b, 0) / trueNext.length;
+          const avgFalse = falseNext.reduce((a, b) => a + b, 0) / falseNext.length;
+          const diff = Math.round((avgTrue - avgFalse) * 10) / 10;
+
+          if (Math.abs(diff) >= 0.2) {
+            const isPos = diff > 0;
+            const sign = isPos ? "+" : "";
+            lagImpacts.push({
+              factorLabel: `${hName} (сегодня)`,
+              targetLabel: `${t.name} (завтра)`,
+              deltaOrR: `${sign}${diff.toFixed(1)}`,
+              isPositive: isPos,
+              sampleCount: trueNext.length + falseNext.length,
+              description: `На следующий день после соблюдения ${hName} средний показатель: ${avgTrue.toFixed(1)} против ${avgFalse.toFixed(1)}`
+            });
+          }
+        }
+      }
+    }
+
+    // Влияние сна дня t на самочувствие дня t+1
+    const sleepPairs = consecutivePairs
+      .map(({ cur, next }) => ({ sleep: cur.sleepHours, energyNext: next.energy, scoreNext: next.score }))
+      .filter((p): p is { sleep: number; energyNext: number; scoreNext: number } => p.sleep !== null && p.energyNext !== null && p.scoreNext !== null);
+
+    if (sleepPairs.length >= 5) {
+      const rSleepEnergy = pearsonCorrelation(sleepPairs.map(p => p.sleep), sleepPairs.map(p => p.energyNext));
+      if (rSleepEnergy !== null && Math.abs(rSleepEnergy) >= 0.2) {
+        lagImpacts.push({
+          factorLabel: "Сон (этой ночью)",
+          targetLabel: "Энергия (завтра)",
+          deltaOrR: `r = ${rSleepEnergy > 0 ? "+" : ""}${rSleepEnergy.toFixed(2)}`,
+          isPositive: rSleepEnergy >= 0,
+          sampleCount: sleepPairs.length,
+          description: `Продолжительность сна связана с уровнем энергии следующего дня (${interpretR(rSleepEnergy).toLowerCase()})`
+        });
+      }
+    }
+  }
+
   return {
     periodDays: limitDays,
     totalRecords: slice.length,
     topCorrelations: correlations.slice(0, 8),
-    topHabitImpacts: habitImpacts.slice(0, 8)
+    topHabitImpacts: habitImpacts.slice(0, 8),
+    lagImpacts: lagImpacts.slice(0, 6)
   };
 }

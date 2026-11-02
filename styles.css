@@ -203,3 +203,8 @@
 .mca-axis-y {
   text-anchor: start;
 }
+
+/* Лаг-карточки отложенного эффекта */
+.mca-card.is-lag-card {
+  border-left: 3px solid #599ed6;
+}

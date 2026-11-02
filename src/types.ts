@@ -44,9 +44,19 @@ export interface HabitImpact {
   summary: string;
 }
 
+export interface LagImpact {
+  factorLabel: string;
+  targetLabel: string;
+  deltaOrR: string;
+  isPositive: boolean;
+  sampleCount: number;
+  description: string;
+}
+
 export interface AnalyticsReport {
   periodDays: number;
   totalRecords: number;
   topCorrelations: MetricCorrelation[];
   topHabitImpacts: HabitImpact[];
+  lagImpacts: LagImpact[];
 }
