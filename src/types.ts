@@ -8,6 +8,7 @@ export interface DailyRecord {
   pagesRead: number | null;
   screenHours: number | null;
   steps: number | null;
+  focusHours: number | null; // глубокая_работа_часов
   bedtime: string | null;
   wakeup: string | null;
   habits: {

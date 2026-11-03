@@ -39,6 +39,7 @@ function interpretR(r: number): string {
 const NUMERIC_METRICS: Array<{ key: keyof Omit<DailyRecord, "dateISO" | "habits" | "bedtime" | "wakeup">; label: string }> = [
   { key: "score", label: "Оценка дня" },
   { key: "energy", label: "Энергия" },
+  { key: "focusHours", label: "Фокус (ч)" },
   { key: "sleepHours", label: "Сон (ч)" },
   { key: "screenHours", label: "Экран (ч)" },
   { key: "steps", label: "Шаги" },
@@ -68,7 +69,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
   const sortedDesc = [...records].sort((a, b) => b.dateISO.localeCompare(a.dateISO));
   const slice = limitDays > 0 ? sortedDesc.slice(0, limitDays) : sortedDesc;
 
-  // 1. Корреляции внутри дня (включая Экран и Шаги)
+  // 1. Корреляции внутри дня (включая Фокус, Экран и Шаги)
   const correlations: MetricCorrelation[] = [];
 
   for (let i = 0; i < NUMERIC_METRICS.length; i++) {
@@ -108,7 +109,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
 
   correlations.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
 
-  // 2. Влияние привычек (включая «Без соцсетей»)
+  // 2. Влияние привычек
   const habitImpacts: HabitImpact[] = [];
   const targets: Array<{ key: "score" | "energy"; name: string }> = [
     { key: "score", name: "Оценку дня" },
@@ -152,7 +153,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
 
   habitImpacts.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-  // 3. Лаг-анализ (t -> t+1): включая экранное время, шаги и соцсети
+  // 3. Лаг-анализ (t -> t+1): включая глубокую работу, экран, шаги и сон
   const lagImpacts: LagImpact[] = [];
   const ascSorted = [...slice].sort((a, b) => a.dateISO.localeCompare(b.dateISO));
   const consecutivePairs: Array<{ cur: DailyRecord; next: DailyRecord }> = [];
@@ -200,6 +201,25 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
             });
           }
         }
+      }
+    }
+
+    // Фокус сегодня -> Энергия/Оценка завтра
+    const focusLagPairs = consecutivePairs
+      .map(({ cur, next }) => ({ focus: cur.focusHours, energyNext: next.energy, scoreNext: next.score }))
+      .filter((p): p is { focus: number; energyNext: number; scoreNext: number } => p.focus !== null && p.energyNext !== null && p.scoreNext !== null);
+
+    if (focusLagPairs.length >= 5) {
+      const rFocusScore = pearsonCorrelation(focusLagPairs.map(p => p.focus), focusLagPairs.map(p => p.scoreNext));
+      if (rFocusScore !== null && Math.abs(rFocusScore) >= 0.2) {
+        lagImpacts.push({
+          factorLabel: "Глубокая работа (сегодня)",
+          targetLabel: "Оценка дня (завтра)",
+          deltaOrR: `r = ${rFocusScore > 0 ? "+" : ""}${rFocusScore.toFixed(2)}`,
+          isPositive: rFocusScore >= 0,
+          sampleCount: focusLagPairs.length,
+          description: `Часы фокуса накануне связаны с ощущением продуктивности следующего дня (${interpretR(rFocusScore).toLowerCase()})`
+        });
       }
     }
 

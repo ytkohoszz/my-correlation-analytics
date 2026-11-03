@@ -51,6 +51,7 @@ export function collectDailyRecords(app: App): DailyRecord[] {
       pagesRead: parseNum(fm["страниц_прочитано"]),
       screenHours: parseNum(fm["экран_часов"]),
       steps: parseNum(fm["шаги"]),
+      focusHours: parseNum(fm["глубокая_работа_часов"]),
       bedtime: parseTimeStr(fm["отбой"]),
       wakeup: parseTimeStr(fm["подъём"]),
       habits: {
