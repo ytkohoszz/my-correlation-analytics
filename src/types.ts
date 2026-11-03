@@ -6,12 +6,17 @@ export interface DailyRecord {
   calories: number | null;
   weight: number | null;
   pagesRead: number | null;
+  screenHours: number | null;
+  steps: number | null;
+  bedtime: string | null;
+  wakeup: string | null;
   habits: {
     nofap: boolean | null;
     тренировка: boolean | null;
     чтение: boolean | null;
     режим_сна: boolean | null;
     диета: boolean | null;
+    без_соцсетей: boolean | null;
   };
 }
 

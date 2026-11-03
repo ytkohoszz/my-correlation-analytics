@@ -36,10 +36,12 @@ function interpretR(r: number): string {
   return "Линейная связь незначительна";
 }
 
-const NUMERIC_METRICS: Array<{ key: keyof Omit<DailyRecord, "dateISO" | "habits">; label: string }> = [
+const NUMERIC_METRICS: Array<{ key: keyof Omit<DailyRecord, "dateISO" | "habits" | "bedtime" | "wakeup">; label: string }> = [
   { key: "score", label: "Оценка дня" },
   { key: "energy", label: "Энергия" },
   { key: "sleepHours", label: "Сон (ч)" },
+  { key: "screenHours", label: "Экран (ч)" },
+  { key: "steps", label: "Шаги" },
   { key: "calories", label: "Калории" },
   { key: "pagesRead", label: "Чтение (стр)" },
   { key: "weight", label: "Вес" }
@@ -50,7 +52,8 @@ const HABIT_NAMES: Record<string, string> = {
   тренировка: "Тренировка",
   чтение: "Чтение",
   режим_сна: "Режим сна",
-  диета: "Диета"
+  диета: "Диета",
+  без_соцсетей: "Без соцсетей"
 };
 
 function parseDateMs(iso: string): number {
@@ -65,7 +68,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
   const sortedDesc = [...records].sort((a, b) => b.dateISO.localeCompare(a.dateISO));
   const slice = limitDays > 0 ? sortedDesc.slice(0, limitDays) : sortedDesc;
 
-  // 1. Корреляции внутри дня
+  // 1. Корреляции внутри дня (включая Экран и Шаги)
   const correlations: MetricCorrelation[] = [];
 
   for (let i = 0; i < NUMERIC_METRICS.length; i++) {
@@ -105,7 +108,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
 
   correlations.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
 
-  // 2. Влияние привычек внутри дня
+  // 2. Влияние привычек (включая «Без соцсетей»)
   const habitImpacts: HabitImpact[] = [];
   const targets: Array<{ key: "score" | "energy"; name: string }> = [
     { key: "score", name: "Оценку дня" },
@@ -149,7 +152,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
 
   habitImpacts.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-  // 3. Лаг-анализ со сдвигом в 1 день (t -> t+1)
+  // 3. Лаг-анализ (t -> t+1): включая экранное время, шаги и соцсети
   const lagImpacts: LagImpact[] = [];
   const ascSorted = [...slice].sort((a, b) => a.dateISO.localeCompare(b.dateISO));
   const consecutivePairs: Array<{ cur: DailyRecord; next: DailyRecord }> = [];
@@ -164,7 +167,7 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
   }
 
   if (consecutivePairs.length >= 5) {
-    // Влияние привычек дня t на энергию и оценку дня t+1
+    // Влияние привычек дня t на завтрашний день t+1
     for (const [hKey, hName] of Object.entries(HABIT_NAMES)) {
       for (const t of targets) {
         const trueNext: number[] = [];
@@ -200,21 +203,40 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
       }
     }
 
-    // Влияние сна дня t на самочувствие дня t+1
-    const sleepPairs = consecutivePairs
-      .map(({ cur, next }) => ({ sleep: cur.sleepHours, energyNext: next.energy, scoreNext: next.score }))
-      .filter((p): p is { sleep: number; energyNext: number; scoreNext: number } => p.sleep !== null && p.energyNext !== null && p.scoreNext !== null);
+    // Экранное время сегодня -> Энергия завтра
+    const screenLagPairs = consecutivePairs
+      .map(({ cur, next }) => ({ screen: cur.screenHours, energyNext: next.energy }))
+      .filter((p): p is { screen: number; energyNext: number } => p.screen !== null && p.energyNext !== null);
 
-    if (sleepPairs.length >= 5) {
-      const rSleepEnergy = pearsonCorrelation(sleepPairs.map(p => p.sleep), sleepPairs.map(p => p.energyNext));
-      if (rSleepEnergy !== null && Math.abs(rSleepEnergy) >= 0.2) {
+    if (screenLagPairs.length >= 5) {
+      const rScreenEnergy = pearsonCorrelation(screenLagPairs.map(p => p.screen), screenLagPairs.map(p => p.energyNext));
+      if (rScreenEnergy !== null && Math.abs(rScreenEnergy) >= 0.2) {
         lagImpacts.push({
-          factorLabel: "Сон (этой ночью)",
+          factorLabel: "Экранное время (сегодня)",
           targetLabel: "Энергия (завтра)",
-          deltaOrR: `r = ${rSleepEnergy > 0 ? "+" : ""}${rSleepEnergy.toFixed(2)}`,
-          isPositive: rSleepEnergy >= 0,
-          sampleCount: sleepPairs.length,
-          description: `Продолжительность сна связана с уровнем энергии следующего дня (${interpretR(rSleepEnergy).toLowerCase()})`
+          deltaOrR: `r = ${rScreenEnergy > 0 ? "+" : ""}${rScreenEnergy.toFixed(2)}`,
+          isPositive: rScreenEnergy >= 0,
+          sampleCount: screenLagPairs.length,
+          description: `Длительность у экрана накануне связана с уровнем энергии следующего дня (${interpretR(rScreenEnergy).toLowerCase()})`
+        });
+      }
+    }
+
+    // Шаги сегодня -> Сон ночью / завтра
+    const stepsSleepPairs = consecutivePairs
+      .map(({ cur, next }) => ({ steps: cur.steps, sleepNext: next.sleepHours }))
+      .filter((p): p is { steps: number; sleepNext: number } => p.steps !== null && p.sleepNext !== null);
+
+    if (stepsSleepPairs.length >= 5) {
+      const rStepsSleep = pearsonCorrelation(stepsSleepPairs.map(p => p.steps), stepsSleepPairs.map(p => p.sleepNext));
+      if (rStepsSleep !== null && Math.abs(rStepsSleep) >= 0.2) {
+        lagImpacts.push({
+          factorLabel: "Шаги (сегодня)",
+          targetLabel: "Сон (следующей ночью)",
+          deltaOrR: `r = ${rStepsSleep > 0 ? "+" : ""}${rStepsSleep.toFixed(2)}`,
+          isPositive: rStepsSleep >= 0,
+          sampleCount: stepsSleepPairs.length,
+          description: `Дневная активность шагов связана с продолжительностью сна следующей ночью (${interpretR(rStepsSleep).toLowerCase()})`
         });
       }
     }
@@ -223,8 +245,8 @@ export function analyzeRecords(records: DailyRecord[], limitDays: number = 30): 
   return {
     periodDays: limitDays,
     totalRecords: slice.length,
-    topCorrelations: correlations.slice(0, 8),
-    topHabitImpacts: habitImpacts.slice(0, 8),
-    lagImpacts: lagImpacts.slice(0, 6)
+    topCorrelations: correlations.slice(0, 10),
+    topHabitImpacts: habitImpacts.slice(0, 10),
+    lagImpacts: lagImpacts.slice(0, 8)
   };
 }

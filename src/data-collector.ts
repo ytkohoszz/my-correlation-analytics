@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import { App } from "obsidian";
 import { DailyRecord } from "./types";
 
 const DIARY_FOLDER = "Ежедневник";
@@ -21,6 +21,12 @@ function parseBool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;
 }
 
+function parseTimeStr(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return /^\d{1,2}[:.]\d{2}$/.test(s) ? s.replace(".", ":") : null;
+}
+
 export function collectDailyRecords(app: App): DailyRecord[] {
   const files = app.vault.getMarkdownFiles().filter(f => f.path.startsWith(DIARY_FOLDER + "/"));
   const recordsMap = new Map<string, DailyRecord>();
@@ -29,7 +35,6 @@ export function collectDailyRecords(app: App): DailyRecord[] {
     const cache = app.metadataCache.getFileCache(file);
     const fm = (cache?.frontmatter || {}) as Record<string, unknown>;
 
-    // Определение даты по свойству 'дата' или названию файла YYYY-MM-DD
     const rawDate = String(fm["дата"] || file.basename).trim();
     const match = rawDate.match(/^\d{4}-\d{2}-\d{2}/);
     if (!match) continue;
@@ -44,12 +49,17 @@ export function collectDailyRecords(app: App): DailyRecord[] {
       calories: parseNum(fm["калории_ккал"]),
       weight: parseNum(fm["вес_кг"]),
       pagesRead: parseNum(fm["страниц_прочитано"]),
+      screenHours: parseNum(fm["экран_часов"]),
+      steps: parseNum(fm["шаги"]),
+      bedtime: parseTimeStr(fm["отбой"]),
+      wakeup: parseTimeStr(fm["подъём"]),
       habits: {
         nofap: parseBool(fm["nofap"]),
         тренировка: parseBool(fm["тренировка"]),
         чтение: parseBool(fm["чтение"]),
         режим_сна: parseBool(fm["режим_сна"]),
-        диета: parseBool(fm["диета"])
+        диета: parseBool(fm["диета"]),
+        без_соцсетей: parseBool(fm["без_соцсетей"])
       }
     });
   }
