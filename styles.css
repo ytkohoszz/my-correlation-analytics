@@ -208,3 +208,150 @@
 .mca-card.is-lag-card {
   border-left: 3px solid #599ed6;
 }
+
+/* ============================================================
+   БЛОК АНАЛИТИКИ ДНЕЙ РЕКОРДОВ (PR VS ОСТАЛЬНЫЕ ДНИ)
+   ============================================================ */
+
+.mca-pr-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-top: 3px solid #e5a158;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.mca-pr-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mca-pr-seg {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mca-pr-select {
+  height: 32px;
+  font-size: 0.76rem;
+  border-radius: 8px;
+}
+
+.mca-pr-warning {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: rgba(229, 161, 88, 0.12);
+  border: 1px solid rgba(229, 161, 88, 0.4);
+  color: #e5a158;
+}
+
+.mca-pr-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.mca-pr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mca-pr-table th {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mca-pr-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mca-pr-td-name {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.mca-pr-td-num {
+  color: var(--text-normal);
+}
+
+.mca-pr-td-sample {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mca-pr-days-details {
+  margin-top: 4px;
+  padding-top: 6px;
+}
+
+.mca-pr-days-summary {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--text-normal);
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 8px;
+}
+
+.mca-pr-days-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mca-pr-day-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.mca-pr-day-date {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-accent);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mca-pr-day-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.mca-pr-event-pill {
+  font-size: 0.74rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(229, 161, 88, 0.14);
+  border: 1px solid rgba(229, 161, 88, 0.35);
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
