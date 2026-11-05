@@ -1,6 +1,6 @@
 .modal.mod-correlation-report {
   width: 92vw !important;
-  max-width: 720px !important;
+  max-width: 740px !important;
   max-height: 88vh !important;
   padding: 18px 22px !important;
   border-radius: 12px !important;
@@ -36,7 +36,6 @@
   flex-wrap: wrap;
 }
 
-/* Тач-кнопки переключения периодов */
 .mca-tab-btn {
   min-height: 32px;
   height: 32px;
@@ -156,7 +155,6 @@
   padding: 8px;
 }
 
-/* Стили векторного Scatter Plot */
 .mca-plot-host {
   margin-top: 8px;
   padding-top: 8px;
@@ -204,45 +202,62 @@
   text-anchor: start;
 }
 
-/* Лаг-карточки отложенного эффекта */
 .mca-card.is-lag-card {
   border-left: 3px solid #599ed6;
 }
 
 /* ============================================================
-   БЛОК АНАЛИТИКИ ДНЕЙ РЕКОРДОВ (PR VS ОСТАЛЬНЫЕ ДНИ)
+   СВОРАЧИВАЕМЫЙ БЛОК «ДНИ РЕКОРДОВ ПРОТИВ ОСТАЛЬНЫХ ДНЕЙ»
    ============================================================ */
 
-.mca-pr-box {
+.mca-pr-details {
   padding: 12px 14px;
   border-radius: 10px;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-top: 3px solid #e5a158;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   margin-bottom: 14px;
 }
 
-.mca-pr-controls {
+.mca-pr-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
 }
 
-.mca-pr-seg {
-  display: inline-flex;
-  gap: 4px;
-  flex-wrap: wrap;
+.mca-pr-summary::-webkit-details-marker {
+  display: none;
 }
 
-.mca-pr-select {
-  height: 32px;
-  font-size: 0.76rem;
-  border-radius: 8px;
+.mca-pr-summary-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.mca-pr-summary-meta {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.mca-pr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
 }
 
 .mca-pr-warning {
@@ -275,83 +290,46 @@
   letter-spacing: 0.03em;
   color: var(--text-muted);
   border-bottom: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
 }
 
 .mca-pr-table td {
-  padding: 6px 8px;
+  padding: 7px 8px;
   border-bottom: 1px solid var(--background-modifier-border);
+  vertical-align: middle;
 }
 
 .mca-pr-td-name {
-  font-weight: 600;
+  min-width: 190px;
+}
+
+.mca-pr-metric-title {
+  font-weight: 650;
   color: var(--text-normal);
+}
+
+.mca-pr-metric-conclusion {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.25;
+}
+
+.mca-pr-metric-conclusion.is-low-sample {
+  color: var(--text-faint);
 }
 
 .mca-pr-td-num {
   color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.mca-pr-td-delta {
+  white-space: nowrap;
 }
 
 .mca-pr-td-sample {
   font-size: 0.72rem;
   color: var(--text-muted);
   white-space: nowrap;
-}
-
-.mca-pr-days-details {
-  margin-top: 4px;
-  padding-top: 6px;
-}
-
-.mca-pr-days-summary {
-  font-size: 0.8rem;
-  font-weight: 650;
-  color: var(--text-normal);
-  cursor: pointer;
-  user-select: none;
-  margin-bottom: 8px;
-}
-
-.mca-pr-days-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.mca-pr-day-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 6px 8px;
-  border-radius: 7px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-}
-
-.mca-pr-day-date {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--text-accent);
-  text-decoration: none;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.mca-pr-day-events {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 1;
-}
-
-.mca-pr-event-pill {
-  font-size: 0.74rem;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgba(229, 161, 88, 0.14);
-  border: 1px solid rgba(229, 161, 88, 0.35);
-  color: var(--text-normal);
-  font-variant-numeric: tabular-nums;
 }

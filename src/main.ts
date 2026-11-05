@@ -7,14 +7,28 @@ import {
   CorrelationAnalyticsSettings,
   DailyRecord,
   DEFAULT_SETTINGS,
-  PRComparisonScope,
-  PRLagMode,
-  PRMetricCriterion,
 } from "./types";
 import {
-  detectWorkoutPRDays,
-  syncPRFlagsToDiaryFrontmatter,
+  detectWorkoutRecordDays,
+  syncRecordFlagsToDiaryFrontmatter,
 } from "./workout-pr";
+
+function migrateSettings(raw: unknown): CorrelationAnalyticsSettings {
+  const s =
+    raw && typeof raw === "object"
+      ? (raw as Record<string, unknown>)
+      : {};
+  return {
+    diaryFolder:
+      typeof s["diaryFolder"] === "string" && s["diaryFolder"].trim()
+        ? s["diaryFolder"].trim()
+        : DEFAULT_SETTINGS.diaryFolder,
+    workoutsFolder:
+      typeof s["workoutsFolder"] === "string" && s["workoutsFolder"].trim()
+        ? s["workoutsFolder"].trim()
+        : DEFAULT_SETTINGS.workoutsFolder,
+  };
+}
 
 class CorrelationSettingTab extends PluginSettingTab {
   plugin: MyCorrelationAnalyticsPlugin;
@@ -56,69 +70,22 @@ class CorrelationSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Критерий рекорда по умолчанию")
+      .setName("Записать метки рекордов в свойства ежедневника (необязательно)")
       .setDesc(
-        "Первый подход каждого варианта («название | тип нагрузки | доп. вес») всегда считается стартовой точкой, а не рекордом"
-      )
-      .addDropdown((d) =>
-        d
-          .addOption("max_reps", "Максимум повторений / секунд на данном весе")
-          .addOption("total_volume", "Максимальный объём за тренировку на данном весе")
-          .addOption("max_weight", "Максимальный дополнительный вес в упражнении")
-          .addOption("any", "Любой из трёх критериев")
-          .setValue(this.plugin.settings.prCriterion)
-          .onChange(async (val) => {
-            this.plugin.settings.prCriterion = val as PRMetricCriterion;
-            await this.plugin.saveSettingsData();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Режим лага для дней рекордов")
-      .setDesc("Сравнивать метрики в сам день рекорда (t) или накануне (t−1)")
-      .addDropdown((d) =>
-        d
-          .addOption("same_day", "В день рекорда (t)")
-          .addOption("prev_day", "Накануне рекорда (t−1)")
-          .setValue(this.plugin.settings.prLagMode)
-          .onChange(async (val) => {
-            this.plugin.settings.prLagMode = val as PRLagMode;
-            await this.plugin.saveSettingsData();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Группа сравнения для дней рекордов")
-      .setDesc("С какими днями сравнивать дни рекордов")
-      .addDropdown((d) =>
-        d
-          .addOption("all_days", "Все дни без рекорда")
-          .addOption("workout_days", "Только тренировочные дни без рекорда")
-          .setValue(this.plugin.settings.prComparisonScope)
-          .onChange(async (val) => {
-            this.plugin.settings.prComparisonScope = val as PRComparisonScope;
-            await this.plugin.saveSettingsData();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Записать метки рекордов в YAML ежедневника (опционально)")
-      .setDesc(
-        "Аналитика считает рекорды на лету без изменения файлов. Эта кнопка при желании пропишет «рекорд_тренировки: true» и «рекорды_упражнений» в заметки ежедневника через processFrontMatter"
+        "Аналитика вычисляет дни рекордов на лету без изменения заметок. Эта кнопка при желании пропишет «рекорд_тренировки: true» и «рекорды_упражнений» в заметки ежедневника через processFrontMatter"
       )
       .addButton((btn) =>
-        btn.setButtonText("Синхронизировать YAML").onClick(async () => {
+        btn.setButtonText("Записать в ежедневник").onClick(async () => {
           btn.setDisabled(true);
           try {
-            const scan = await detectWorkoutPRDays(
+            const scan = await detectWorkoutRecordDays(
               this.app,
-              this.plugin.settings.workoutsFolder,
-              this.plugin.settings.prCriterion
+              this.plugin.settings.workoutsFolder
             );
-            const count = await syncPRFlagsToDiaryFrontmatter(
+            const count = await syncRecordFlagsToDiaryFrontmatter(
               this.app,
               this.plugin.settings.diaryFolder,
-              scan.prDaysByDate
+              scan.recordDaySummariesByDate
             );
             new Notice(`Обновлено заметок ежедневника с рекордами: ${count}`);
           } finally {
@@ -156,8 +123,8 @@ export default class MyCorrelationAnalyticsPlugin extends Plugin {
   }
 
   async loadSettingsData(): Promise<void> {
-    const raw = (await this.loadData()) as Partial<CorrelationAnalyticsSettings> | null;
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
+    const raw = await this.loadData();
+    this.settings = migrateSettings(raw);
   }
 
   async saveSettingsData(): Promise<void> {
@@ -170,17 +137,13 @@ export default class MyCorrelationAnalyticsPlugin extends Plugin {
 
   public async getReportAsync(days: number = 30): Promise<AnalyticsReport> {
     const records = this.getRawRecords();
-    const scan = await detectWorkoutPRDays(
+    const scan = await detectWorkoutRecordDays(
       this.app,
-      this.settings.workoutsFolder,
-      this.settings.prCriterion
+      this.settings.workoutsFolder
     );
     return analyzeRecords(records, days, {
-      prDaysByDate: scan.prDaysByDate,
+      recordDatesSet: new Set(scan.recordDaySummariesByDate.keys()),
       workoutDatesSet: scan.workoutDatesSet,
-      prCriterion: this.settings.prCriterion,
-      prLagMode: this.settings.prLagMode,
-      prComparisonScope: this.settings.prComparisonScope,
     });
   }
 

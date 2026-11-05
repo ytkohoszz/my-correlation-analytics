@@ -1,21 +1,11 @@
-export type PRMetricCriterion = "max_reps" | "total_volume" | "max_weight" | "any";
-export type PRLagMode = "same_day" | "prev_day";
-export type PRComparisonScope = "all_days" | "workout_days";
-
 export interface CorrelationAnalyticsSettings {
   diaryFolder: string;
   workoutsFolder: string;
-  prCriterion: PRMetricCriterion;
-  prLagMode: PRLagMode;
-  prComparisonScope: PRComparisonScope;
 }
 
 export const DEFAULT_SETTINGS: CorrelationAnalyticsSettings = {
   diaryFolder: "Ежедневник",
   workoutsFolder: "Знания",
-  prCriterion: "max_reps",
-  prLagMode: "same_day",
-  prComparisonScope: "all_days",
 };
 
 export interface DailyRecord {
@@ -56,50 +46,27 @@ export interface ExerciseVariantSpec {
   loadSortOrder: number;
 }
 
-export interface PRRecordEvent {
-  variantKey: string;
-  exerciseName: string;
-  variant: string;
-  loadType: ExerciseLoadType;
-  weight: number | null;
-  unit: "повт." | "с";
-  criterionTriggered: "max_reps" | "total_volume" | "max_weight";
-  newValue: number;
-  previousBest: number;
-  setsSummary: string;
-}
-
-export interface PRDayEntry {
-  dateISO: string;
-  workoutPath: string;
-  workoutTitle: string;
-  events: PRRecordEvent[];
-}
-
-export interface PRMetricComparisonRow {
+export interface RecordDayMetricRow {
   key: string;
   label: string;
   unit: string;
   kind: "numeric" | "habit_pct";
   higherIsBetter: boolean;
-  avgPR: number | null;
-  avgOther: number | null;
+  avgRecordDays: number | null;
+  avgOtherDays: number | null;
   delta: number | null;
-  countPR: number;
-  countOther: number;
+  countRecordDays: number;
+  countOtherDays: number;
   lowSample: boolean;
+  conclusion: string;
 }
 
-export interface PRAnalyticsReport {
-  criterion: PRMetricCriterion;
-  lagMode: PRLagMode;
-  comparisonScope: PRComparisonScope;
-  totalPRDaysInPeriod: number;
-  totalComparisonDaysInPeriod: number;
+export interface RecordDaysReport {
+  totalRecordDaysInPeriod: number;
+  totalOtherDaysInPeriod: number;
   totalWorkoutDaysInPeriod: number;
   lowSampleOverall: boolean;
-  rows: PRMetricComparisonRow[];
-  prDays: PRDayEntry[];
+  rows: RecordDayMetricRow[];
 }
 
 export interface ScatterPoint {
@@ -168,5 +135,5 @@ export interface AnalyticsReport {
   lagImpacts: LagImpact[];
   socialLimitInsights: SocialLimitInsight[];
   socialStats: SocialStats;
-  prReport: PRAnalyticsReport;
+  recordDaysReport: RecordDaysReport;
 }

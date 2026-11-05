@@ -1,11 +1,5 @@
 import { App, TFile, normalizePath } from "obsidian";
-import {
-  ExerciseLoadType,
-  ExerciseVariantSpec,
-  PRDayEntry,
-  PRMetricCriterion,
-  PRRecordEvent,
-} from "./types";
+import { ExerciseLoadType, ExerciseVariantSpec } from "./types";
 
 const MIN_VALID_DATE_ISO = "2000-01-01";
 
@@ -35,7 +29,7 @@ function parseWeightNumber(v: unknown): number | null {
 
 /**
  * Единая функция нормализации варианта упражнения (идентична функции в health.js):
- * формирует ключ `название|вариант|тип_нагрузки|вес_кг`.
+ * строит ключ `название|вариант|тип_нагрузки|вес_кг`.
  * Различает:
  * - "bw" (свой вес, доп_вес_кг === 0)
  * - "weighted" (доп. вес > 0, округление до 0.01)
@@ -105,7 +99,6 @@ interface WorkoutSessionParsed {
   path: string;
   dateISO: string;
   startOrderMs: number;
-  title: string;
   sets: ParsedSetItem[];
 }
 
@@ -164,19 +157,19 @@ function parseSetsFromWorkoutText(content: string): ParsedSetItem[] {
 }
 
 export interface WorkoutHistoryScanResult {
-  prDaysByDate: Map<string, PRDayEntry>;
+  recordDaySummariesByDate: Map<string, string[]>;
   workoutDatesSet: Set<string>;
 }
 
 /**
  * Сканирует все файлы тренировок в хронологическом порядке (от старых к новым).
- * Первый день появления варианта упражнения фиксируется как стартовая точка (baseline)
- * и НЕ считается рекордом. Рекорд засчитывается только при строгом превышении прошлого максимума.
+ * Критерий рекорда единственный: максимум повторений (или секунд) в рамках варианта
+ * «название | вариант | тип нагрузки | доп. вес».
+ * Первый подход каждого варианта в истории фиксируется как стартовая точка и НЕ считается рекордом.
  */
-export async function detectWorkoutPRDays(
+export async function detectWorkoutRecordDays(
   app: App,
-  workoutsFolder: string = "Знания",
-  criterion: PRMetricCriterion = "max_reps"
+  workoutsFolder: string = "Знания"
 ): Promise<WorkoutHistoryScanResult> {
   const folderPrefix =
     normalizePath(workoutsFolder || "Знания").replace(/\/+$/, "") + "/";
@@ -186,7 +179,6 @@ export async function detectWorkoutPRDays(
     file: TFile;
     dateISO: string;
     startStr: string;
-    title: string;
   }> = [];
 
   for (const file of app.vault.getMarkdownFiles()) {
@@ -205,8 +197,7 @@ export async function detectWorkoutPRDays(
     if (!dateISO) continue;
 
     const startStr = cleanText(fm["начало"]);
-    const title = cleanText(fm["название_тренировки"]) || file.basename;
-    candidateFiles.push({ file, dateISO, startStr, title });
+    candidateFiles.push({ file, dateISO, startStr });
   }
 
   const parsedSessions: WorkoutSessionParsed[] = [];
@@ -227,12 +218,10 @@ export async function detectWorkoutPRDays(
       path: item.file.path,
       dateISO: item.dateISO,
       startOrderMs: baseMs + parseStartOffsetMs(item.startStr),
-      title: item.title,
       sets,
     });
   }
 
-  // Строгая хронологическая сортировка от самой первой тренировки к последней
   parsedSessions.sort(
     (a, b) =>
       a.startOrderMs - b.startOrderMs ||
@@ -240,7 +229,6 @@ export async function detectWorkoutPRDays(
       a.path.localeCompare(b.path, "ru")
   );
 
-  // Группируем по дате (если в один день было две сессии, агрегируем по дню)
   const sessionsByDate = new Map<string, WorkoutSessionParsed[]>();
   for (const sess of parsedSessions) {
     const list = sessionsByDate.get(sess.dateISO) ?? [];
@@ -249,13 +237,8 @@ export async function detectWorkoutPRDays(
   }
 
   const workoutDatesSet = new Set<string>(sessionsByDate.keys());
-  const prDaysByDate = new Map<string, PRDayEntry>();
-
-  // Исторические максимумы по ключу варианта `название|вариант|тип_нагрузки|вес_кг`
+  const recordDaySummariesByDate = new Map<string, string[]>();
   const bestRepsByVariant = new Map<string, number>();
-  const bestVolumeByVariant = new Map<string, number>();
-  // Исторический максимум доп. веса по ключу `название|вариант`
-  const bestWeightByExercise = new Map<string, number>();
 
   const sortedDatesAsc = Array.from(sessionsByDate.keys()).sort((a, b) =>
     a.localeCompare(b)
@@ -263,27 +246,13 @@ export async function detectWorkoutPRDays(
 
   for (const dateISO of sortedDatesAsc) {
     const daySessions = sessionsByDate.get(dateISO) ?? [];
-    const primarySession = daySessions[daySessions.length - 1];
-    if (!primarySession) continue;
 
-    // Сводка всех подходов дня по вариантам упражнений
     const dayVariantGroups = new Map<
       string,
       {
         spec: ExerciseVariantSpec;
         unit: "повт." | "с";
         values: number[];
-      }
-    >();
-
-    // Максимальный вес за этот день по `название|вариант`
-    const dayMaxWeightByEx = new Map<
-      string,
-      {
-        spec: ExerciseVariantSpec;
-        unit: "повт." | "с";
-        maxWeight: number;
-        bestRepsAtMaxWeight: number;
       }
     >();
 
@@ -295,141 +264,47 @@ export async function detectWorkoutPRDays(
           dayVariantGroups.set(s.spec.key, grp);
         }
         grp.values.push(s.value);
-
-        if (s.spec.loadType === "weighted" && s.spec.weight !== null && s.spec.weight > 0) {
-          const exKey = `${s.spec.name}|${s.spec.variant}`;
-          const prevW = dayMaxWeightByEx.get(exKey);
-          if (!prevW || s.spec.weight > prevW.maxWeight) {
-            dayMaxWeightByEx.set(exKey, {
-              spec: s.spec,
-              unit: s.unit,
-              maxWeight: s.spec.weight,
-              bestRepsAtMaxWeight: s.value,
-            });
-          } else if (s.spec.weight === prevW.maxWeight && s.value > prevW.bestRepsAtMaxWeight) {
-            prevW.bestRepsAtMaxWeight = s.value;
-          }
-        }
       }
     }
 
-    const dayEvents: PRRecordEvent[] = [];
+    const dayRecords: string[] = [];
 
-    // 1. Проверка рекорда по повторениям (max_reps) и объёму (total_volume) внутри точного веса
     for (const [varKey, grp] of dayVariantGroups.entries()) {
       const dayBestReps = Math.max(...grp.values);
-      const dayTotalVol = r2(grp.values.reduce((acc, v) => acc + v, 0));
-      const setsSummary = grp.values.map((v) => r2(v).toLocaleString("ru-RU")).join(" · ");
-
       const prevBestReps = bestRepsByVariant.get(varKey);
-      const prevBestVol = bestVolumeByVariant.get(varKey);
 
       if (prevBestReps === undefined) {
-        // Первое появление этого упражнения с этим весом в истории — стартовая точка (baseline), НЕ рекорд
+        // Первый подход варианта в истории — стартовая точка, а не рекорд
         bestRepsByVariant.set(varKey, dayBestReps);
-      } else {
-        if (
-          (criterion === "max_reps" || criterion === "any") &&
-          dayBestReps > prevBestReps
-        ) {
-          dayEvents.push({
-            variantKey: varKey,
-            exerciseName: grp.spec.name,
-            variant: grp.spec.variant,
-            loadType: grp.spec.loadType,
-            weight: grp.spec.weight,
-            unit: grp.unit,
-            criterionTriggered: "max_reps",
-            newValue: dayBestReps,
-            previousBest: prevBestReps,
-            setsSummary,
-          });
-        }
-        if (dayBestReps > prevBestReps) {
-          bestRepsByVariant.set(varKey, dayBestReps);
-        }
-      }
-
-      if (prevBestVol === undefined) {
-        bestVolumeByVariant.set(varKey, dayTotalVol);
-      } else {
-        const alreadyAddedRepsPR = dayEvents.some(
-          (e) => e.variantKey === varKey && e.criterionTriggered === "max_reps"
+      } else if (dayBestReps > prevBestReps) {
+        bestRepsByVariant.set(varKey, dayBestReps);
+        const label = formatExerciseVariantLabel(
+          grp.spec.name,
+          grp.spec.variant,
+          grp.spec.loadType,
+          grp.spec.weight
         );
-        if (
-          (criterion === "total_volume" || (criterion === "any" && !alreadyAddedRepsPR)) &&
-          dayTotalVol > prevBestVol
-        ) {
-          dayEvents.push({
-            variantKey: varKey,
-            exerciseName: grp.spec.name,
-            variant: grp.spec.variant,
-            loadType: grp.spec.loadType,
-            weight: grp.spec.weight,
-            unit: grp.unit,
-            criterionTriggered: "total_volume",
-            newValue: dayTotalVol,
-            previousBest: prevBestVol,
-            setsSummary,
-          });
-        }
-        if (dayTotalVol > prevBestVol) {
-          bestVolumeByVariant.set(varKey, dayTotalVol);
-        }
+        dayRecords.push(
+          `${label}: ${r2(dayBestReps).toLocaleString("ru-RU")} ${grp.unit} (было ${r2(prevBestReps).toLocaleString("ru-RU")})`
+        );
       }
     }
 
-    // 2. Проверка рекорда по максимальному дополнительному весу (max_weight)
-    for (const [exKey, wInfo] of dayMaxWeightByEx.entries()) {
-      const prevMaxW = bestWeightByExercise.get(exKey);
-      if (prevMaxW === undefined) {
-        // Первая тренировка с доп. весом в этом упражнении — стартовая точка
-        bestWeightByExercise.set(exKey, wInfo.maxWeight);
-      } else {
-        if (
-          (criterion === "max_weight" || criterion === "any") &&
-          wInfo.maxWeight > prevMaxW
-        ) {
-          dayEvents.push({
-            variantKey: wInfo.spec.key,
-            exerciseName: wInfo.spec.name,
-            variant: wInfo.spec.variant,
-            loadType: "weighted",
-            weight: wInfo.maxWeight,
-            unit: wInfo.unit,
-            criterionTriggered: "max_weight",
-            newValue: wInfo.maxWeight,
-            previousBest: prevMaxW,
-            setsSummary: `${wInfo.bestRepsAtMaxWeight} ${wInfo.unit}`,
-          });
-        }
-        if (wInfo.maxWeight > prevMaxW) {
-          bestWeightByExercise.set(exKey, wInfo.maxWeight);
-        }
-      }
-    }
-
-    if (dayEvents.length > 0) {
-      prDaysByDate.set(dateISO, {
-        dateISO,
-        workoutPath: primarySession.path,
-        workoutTitle: primarySession.title,
-        events: dayEvents,
-      });
+    if (dayRecords.length > 0) {
+      recordDaySummariesByDate.set(dateISO, dayRecords);
     }
   }
 
-  return { prDaysByDate, workoutDatesSet };
+  return { recordDaySummariesByDate, workoutDatesSet };
 }
 
 /**
- * Опциональная синхронизация флага `рекорд_тренировки` и списка `рекорды_упражнений`
- * в заметки ежедневника исключительно через app.fileManager.processFrontMatter.
+ * Опциональная запись меток рекордов в заметки ежедневника через app.fileManager.processFrontMatter.
  */
-export async function syncPRFlagsToDiaryFrontmatter(
+export async function syncRecordFlagsToDiaryFrontmatter(
   app: App,
   diaryFolder: string,
-  prDaysByDate: Map<string, PRDayEntry>
+  recordDaySummariesByDate: Map<string, string[]>
 ): Promise<number> {
   const folderPrefix =
     normalizePath(diaryFolder || "Ежедневник").replace(/\/+$/, "") + "/";
@@ -447,24 +322,8 @@ export async function syncPRFlagsToDiaryFrontmatter(
     if (!match || !match[1]) continue;
 
     const dateISO = match[1];
-    const prEntry = prDaysByDate.get(dateISO);
-    if (!prEntry) continue;
-
-    const summaryList = prEntry.events.map((ev) => {
-      const label = formatExerciseVariantLabel(
-        ev.exerciseName,
-        ev.variant,
-        ev.loadType,
-        ev.weight
-      );
-      if (ev.criterionTriggered === "max_weight") {
-        return `${label}: новый вес +${ev.newValue} кг (было +${ev.previousBest} кг)`;
-      }
-      if (ev.criterionTriggered === "total_volume") {
-        return `${label}: объём ${ev.newValue} ${ev.unit} (было ${ev.previousBest})`;
-      }
-      return `${label}: ${ev.newValue} ${ev.unit} (было ${ev.previousBest})`;
-    });
+    const summaryList = recordDaySummariesByDate.get(dateISO);
+    if (!summaryList || summaryList.length === 0) continue;
 
     await app.fileManager.processFrontMatter(
       file,

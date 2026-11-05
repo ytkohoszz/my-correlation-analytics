@@ -7,17 +7,13 @@ import {
   LagImpact,
   SocialLimitInsight,
   SocialStats,
-  PRAnalyticsReport,
-  PRDayEntry,
-  PRLagMode,
-  PRMetricComparisonRow,
-  PRMetricCriterion,
-  PRComparisonScope,
+  RecordDaysReport,
+  RecordDayMetricRow,
 } from "./types";
 
 export const SOCIAL_LIMIT_MIN = 30;
 const MIN_SAMPLE = 4;
-const MIN_PR_GROUP_SAMPLE = 3;
+const MIN_GROUP_DAYS = 3;
 
 export function pearsonCorrelation(xs: number[], ys: number[]): number | null {
   if (xs.length !== ys.length || xs.length < MIN_SAMPLE) return null;
@@ -52,7 +48,7 @@ function interpretR(r: number): string {
   if (absR >= 0.65) return `Заметная ${sign} связь`;
   if (absR >= 0.35) return `Умеренная ${sign} связь`;
   if (absR >= 0.18) return `Слабая ${sign} связь`;
-  return "Линейная связь незначительна";
+  return "Связь почти не выражена";
 }
 
 const NUMERIC_METRICS: Array<{
@@ -91,93 +87,111 @@ function parseDateMs(iso: string): number {
   return 0;
 }
 
-function previousDateISO(iso: string): string {
-  const ms = parseDateMs(iso);
-  if (!ms) return "";
-  const prev = new Date(ms - 86400000);
-  const y = prev.getUTCFullYear();
-  const m = String(prev.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(prev.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+function formatNumRu(n: number): string {
+  return (Math.round(n * 10) / 10).toLocaleString("ru-RU");
+}
+
+function formatHoursDiffHuman(diffHours: number): string {
+  const totalMin = Math.round(Math.abs(diffHours) * 60);
+  if (totalMin < 60) {
+    return `${totalMin} мин`;
+  }
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
+}
+
+function buildHumanConclusion(
+  key: string,
+  label: string,
+  unit: string,
+  kind: "numeric" | "habit_pct",
+  delta: number | null,
+  lowSample: boolean
+): string {
+  if (delta === null) {
+    return "Недостаточно записей для сравнения";
+  }
+  const prefix = lowSample ? "Мало данных (выборка < 3 дн.): " : "";
+
+  if (kind === "habit_pct") {
+    const absPct = Math.round(Math.abs(delta));
+    if (absPct < 2) {
+      return `${prefix}Выполняется примерно одинаково`;
+    }
+    if (key === "sleepDeprived") {
+      return delta > 0
+        ? `${prefix}В дни рекордов недосып бывает на ${absPct}% чаще`
+        : `${prefix}В дни рекордов недосып бывает на ${absPct}% реже`;
+    }
+    return delta > 0
+      ? `${prefix}В дни рекордов выполняется на ${absPct}% чаще`
+      : `${prefix}В дни рекордов выполняется на ${absPct}% реже`;
+  }
+
+  const absVal = Math.abs(delta);
+  if (
+    (key === "sleepHours" && absVal < 0.08) ||
+    (key === "focusHours" && absVal < 0.08) ||
+    (key === "calories" && absVal < 15) ||
+    (key === "steps" && absVal < 100) ||
+    absVal < 0.05
+  ) {
+    return `${prefix}В дни рекордов и в остальные дни почти не отличается`;
+  }
+
+  if (key === "sleepHours") {
+    const durText = formatHoursDiffHuman(delta);
+    return delta > 0
+      ? `${prefix}В дни рекордов сон в среднем на ${durText} дольше`
+      : `${prefix}В дни рекордов сон в среднем на ${durText} короче`;
+  }
+
+  if (key === "focusHours") {
+    const durText = formatHoursDiffHuman(delta);
+    return delta > 0
+      ? `${prefix}В дни рекордов глубокая работа в среднем на ${durText} дольше`
+      : `${prefix}В дни рекордов глубокая работа в среднем на ${durText} меньше`;
+  }
+
+  const cleanUnit = unit === "/10" ? "балла" : unit;
+  const word = delta > 0 ? "выше" : "ниже";
+  return `${prefix}В дни рекордов ${label.toLowerCase()} в среднем на ${formatNumRu(absVal)} ${cleanUnit} ${word}`;
+}
+
 export interface AnalyzeOptions {
-  limitDays?: number;
-  prDaysByDate?: Map<string, PRDayEntry>;
+  recordDatesSet?: Set<string>;
   workoutDatesSet?: Set<string>;
-  prCriterion?: PRMetricCriterion;
-  prLagMode?: PRLagMode;
-  prComparisonScope?: PRComparisonScope;
 }
 
 /**
- * Сравнивает метрики ежедневника в «дни рекордов» против «остальных дней»
- * с учётом лага (в тот же день t или накануне t-1).
+ * Сравнивает показатели в дни рекордов против всех остальных дней периода.
  */
-export function analyzePRDayComparisons(
-  allRecords: DailyRecord[],
+export function analyzeRecordDaysComparisons(
   sliceRecords: DailyRecord[],
-  prDaysByDate: Map<string, PRDayEntry>,
-  workoutDatesSet: Set<string>,
-  criterion: PRMetricCriterion,
-  lagMode: PRLagMode,
-  comparisonScope: PRComparisonScope
-): PRAnalyticsReport {
-  const recordByDate = new Map<string, DailyRecord>();
-  for (const r of allRecords) {
-    recordByDate.set(r.dateISO, r);
-  }
-
-  const sliceDatesSet = new Set<string>(sliceRecords.map((r) => r.dateISO));
-
-  // Список дней рекордов, попавших в выбранный период
-  const prDaysInPeriod: PRDayEntry[] = [];
-  for (const [dateISO, entry] of prDaysByDate.entries()) {
-    if (sliceDatesSet.has(dateISO)) {
-      prDaysInPeriod.push(entry);
-    }
-  }
-  prDaysInPeriod.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
-
-  // Формируем две выборки целевых дат: PR-дни и группа сравнения
-  const prTargetDates: string[] = [];
-  const otherTargetDates: string[] = [];
+  recordDatesSet: Set<string>,
+  workoutDatesSet: Set<string>
+): RecordDaysReport {
+  const recordDays: DailyRecord[] = [];
+  const otherDays: DailyRecord[] = [];
   let totalWorkoutDaysInPeriod = 0;
 
   for (const r of sliceRecords) {
-    const isWorkoutDay =
-      workoutDatesSet.has(r.dateISO) || r.habits.тренировка === true;
-    if (isWorkoutDay) totalWorkoutDaysInPeriod++;
-
-    if (prDaysByDate.has(r.dateISO)) {
-      prTargetDates.push(r.dateISO);
+    if (workoutDatesSet.has(r.dateISO) || r.habits.тренировка === true) {
+      totalWorkoutDaysInPeriod++;
+    }
+    if (recordDatesSet.has(r.dateISO)) {
+      recordDays.push(r);
     } else {
-      if (comparisonScope === "workout_days" && !isWorkoutDay) {
-        continue;
-      }
-      otherTargetDates.push(r.dateISO);
+      otherDays.push(r);
     }
   }
 
-  // Разрешение записи с учётом выбранного режима лага (день t или накануне t-1)
-  const resolveRecordForDate = (targetDateISO: string): DailyRecord | undefined => {
-    const lookupDate =
-      lagMode === "prev_day" ? previousDateISO(targetDateISO) : targetDateISO;
-    return lookupDate ? recordByDate.get(lookupDate) : undefined;
-  };
-
-  const prResolved = prTargetDates
-    .map(resolveRecordForDate)
-    .filter((r): r is DailyRecord => r !== undefined);
-  const otherResolved = otherTargetDates
-    .map(resolveRecordForDate)
-    .filter((r): r is DailyRecord => r !== undefined);
-
-  const rows: PRMetricComparisonRow[] = [];
+  const rows: RecordDayMetricRow[] = [];
 
   const addNumericRow = (
     key: string,
@@ -186,30 +200,34 @@ export function analyzePRDayComparisons(
     higherIsBetter: boolean,
     getter: (r: DailyRecord) => number | null
   ) => {
-    const prVals: number[] = [];
-    const otherVals: number[] = [];
+    const recVals: number[] = [];
+    const othVals: number[] = [];
 
-    for (const r of prResolved) {
+    for (const r of recordDays) {
       const v = getter(r);
-      if (v !== null && Number.isFinite(v)) prVals.push(v);
+      if (v !== null && Number.isFinite(v)) recVals.push(v);
     }
-    for (const r of otherResolved) {
+    for (const r of otherDays) {
       const v = getter(r);
-      if (v !== null && Number.isFinite(v)) otherVals.push(v);
+      if (v !== null && Number.isFinite(v)) othVals.push(v);
     }
 
-    if (prVals.length === 0 && otherVals.length === 0) return;
+    if (recVals.length === 0 && othVals.length === 0) return;
 
-    const avgPR =
-      prVals.length > 0
-        ? round1(prVals.reduce((a, b) => a + b, 0) / prVals.length)
+    const avgRecordDays =
+      recVals.length > 0
+        ? round1(recVals.reduce((a, b) => a + b, 0) / recVals.length)
         : null;
-    const avgOther =
-      otherVals.length > 0
-        ? round1(otherVals.reduce((a, b) => a + b, 0) / otherVals.length)
+    const avgOtherDays =
+      othVals.length > 0
+        ? round1(othVals.reduce((a, b) => a + b, 0) / othVals.length)
         : null;
     const delta =
-      avgPR !== null && avgOther !== null ? round1(avgPR - avgOther) : null;
+      avgRecordDays !== null && avgOtherDays !== null
+        ? round1(avgRecordDays - avgOtherDays)
+        : null;
+    const lowSample =
+      recVals.length < MIN_GROUP_DAYS || othVals.length < MIN_GROUP_DAYS;
 
     rows.push({
       key,
@@ -217,14 +235,20 @@ export function analyzePRDayComparisons(
       unit,
       kind: "numeric",
       higherIsBetter,
-      avgPR,
-      avgOther,
+      avgRecordDays,
+      avgOtherDays,
       delta,
-      countPR: prVals.length,
-      countOther: otherVals.length,
-      lowSample:
-        prVals.length < MIN_PR_GROUP_SAMPLE ||
-        otherVals.length < MIN_PR_GROUP_SAMPLE,
+      countRecordDays: recVals.length,
+      countOtherDays: othVals.length,
+      lowSample,
+      conclusion: buildHumanConclusion(
+        key,
+        label,
+        unit,
+        "numeric",
+        delta,
+        lowSample
+      ),
     });
   };
 
@@ -234,31 +258,34 @@ export function analyzePRDayComparisons(
     higherIsBetter: boolean,
     getter: (r: DailyRecord) => boolean | null
   ) => {
-    const prBools: boolean[] = [];
-    const otherBools: boolean[] = [];
+    const recBools: boolean[] = [];
+    const othBools: boolean[] = [];
 
-    for (const r of prResolved) {
+    for (const r of recordDays) {
       const b = getter(r);
-      if (typeof b === "boolean") prBools.push(b);
+      if (typeof b === "boolean") recBools.push(b);
     }
-    for (const r of otherResolved) {
+    for (const r of otherDays) {
       const b = getter(r);
-      if (typeof b === "boolean") otherBools.push(b);
+      if (typeof b === "boolean") othBools.push(b);
     }
 
-    if (prBools.length === 0 && otherBools.length === 0) return;
+    if (recBools.length === 0 && othBools.length === 0) return;
 
-    const avgPR =
-      prBools.length > 0
-        ? Math.round((prBools.filter(Boolean).length / prBools.length) * 100)
+    const avgRecordDays =
+      recBools.length > 0
+        ? Math.round((recBools.filter(Boolean).length / recBools.length) * 100)
         : null;
-    const avgOther =
-      otherBools.length > 0
-        ? Math.round(
-            (otherBools.filter(Boolean).length / otherBools.length) * 100
-          )
+    const avgOtherDays =
+      othBools.length > 0
+        ? Math.round((othBools.filter(Boolean).length / othBools.length) * 100)
         : null;
-    const delta = avgPR !== null && avgOther !== null ? avgPR - avgOther : null;
+    const delta =
+      avgRecordDays !== null && avgOtherDays !== null
+        ? avgRecordDays - avgOtherDays
+        : null;
+    const lowSample =
+      recBools.length < MIN_GROUP_DAYS || othBools.length < MIN_GROUP_DAYS;
 
     rows.push({
       key,
@@ -266,18 +293,23 @@ export function analyzePRDayComparisons(
       unit: "%",
       kind: "habit_pct",
       higherIsBetter,
-      avgPR,
-      avgOther,
+      avgRecordDays,
+      avgOtherDays,
       delta,
-      countPR: prBools.length,
-      countOther: otherBools.length,
-      lowSample:
-        prBools.length < MIN_PR_GROUP_SAMPLE ||
-        otherBools.length < MIN_PR_GROUP_SAMPLE,
+      countRecordDays: recBools.length,
+      countOtherDays: othBools.length,
+      lowSample,
+      conclusion: buildHumanConclusion(
+        key,
+        label,
+        "%",
+        "habit_pct",
+        delta,
+        lowSample
+      ),
     });
   };
 
-  // Числовые метрики
   addNumericRow("score", "Оценка дня", "/10", true, (r) => r.score);
   addNumericRow("energy", "Энергия", "/10", true, (r) => r.energy);
   addNumericRow("sleepHours", "Сон", "ч", true, (r) => r.sleepHours);
@@ -292,40 +324,24 @@ export function analyzePRDayComparisons(
   addNumericRow("fats", "Жиры", "г", true, (r) => r.fats);
   addNumericRow("carbs", "Углеводы", "г", true, (r) => r.carbs);
   addNumericRow("weight", "Вес тела", "кг", true, (r) => r.weight);
-  addNumericRow("focusHours", "Глубокая работа (фокус)", "ч", true, (r) => r.focusHours);
+  addNumericRow("focusHours", "Глубокая работа", "ч", true, (r) => r.focusHours);
   addNumericRow("steps", "Шаги", "шаг", true, (r) => r.steps);
   addNumericRow("pagesRead", "Чтение", "стр", true, (r) => r.pagesRead);
   addNumericRow("socialMinutes", "Скроллинг соцсетей", "мин", false, (r) => r.socialMinutes);
 
-  // Привычки (% выполнения)
   addBooleanRateRow("habit_nofap", "Привычка: NoFap", true, (r) => r.habits.nofap);
-  addBooleanRateRow(
-    "habit_sleep",
-    "Привычка: Режим сна",
-    true,
-    (r) => r.habits.режим_сна
-  );
+  addBooleanRateRow("habit_sleep", "Привычка: Режим сна", true, (r) => r.habits.режим_сна);
   addBooleanRateRow("habit_diet", "Привычка: Диета", true, (r) => r.habits.диета);
-  addBooleanRateRow(
-    "habit_nosocial",
-    "Привычка: Без соцсетей",
-    true,
-    (r) => r.habits.без_соцсетей
-  );
+  addBooleanRateRow("habit_nosocial", "Привычка: Без соцсетей", true, (r) => r.habits.без_соцсетей);
   addBooleanRateRow("habit_reading", "Привычка: Чтение", true, (r) => r.habits.чтение);
 
   return {
-    criterion,
-    lagMode,
-    comparisonScope,
-    totalPRDaysInPeriod: prTargetDates.length,
-    totalComparisonDaysInPeriod: otherTargetDates.length,
+    totalRecordDaysInPeriod: recordDays.length,
+    totalOtherDaysInPeriod: otherDays.length,
     totalWorkoutDaysInPeriod,
     lowSampleOverall:
-      prTargetDates.length < MIN_PR_GROUP_SAMPLE ||
-      otherTargetDates.length < MIN_PR_GROUP_SAMPLE,
+      recordDays.length < MIN_GROUP_DAYS || otherDays.length < MIN_GROUP_DAYS,
     rows,
-    prDays: prDaysInPeriod,
   };
 }
 
@@ -339,7 +355,7 @@ export function analyzeRecords(
   );
   const slice = limitDays > 0 ? sortedDesc.slice(0, limitDays) : sortedDesc;
 
-  // ─── 1. Парные корреляции Пирсона ─────────────────────────────────────────
+  // ─── 1. Парные связи показателей ──────────────────────────────────────────
   const correlations: MetricCorrelation[] = [];
 
   for (let i = 0; i < NUMERIC_METRICS.length; i++) {
@@ -424,7 +440,7 @@ export function analyzeRecords(
 
   habitImpacts.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-  // ─── 3. Лаг-анализ (t → t+1) ──────────────────────────────────────────────
+  // ─── 3. Эффекты на следующий день ─────────────────────────────────────────
   const lagImpacts: LagImpact[] = [];
   const ascSorted = [...slice].sort((a, b) =>
     a.dateISO.localeCompare(b.dateISO)
@@ -472,113 +488,15 @@ export function analyzeRecords(
               deltaOrR: `${sign}${diff.toFixed(1)}`,
               isPositive: isPos,
               sampleCount: trueNext.length + falseNext.length,
-              description: `На следующий день после соблюдения ${hName} средний показатель: ${avgTrue.toFixed(1)} против ${avgFalse.toFixed(1)}`,
+              description: `На следующий день после соблюдения привычки средний показатель: ${avgTrue.toFixed(1)} против ${avgFalse.toFixed(1)}`,
             });
           }
         }
       }
     }
-
-    const socialLagPairs = consecutivePairs
-      .map(({ cur, next }) => ({
-        social: cur.socialMinutes,
-        scoreNext: next.score,
-        energyNext: next.energy,
-      }))
-      .filter(
-        (p): p is { social: number; scoreNext: number; energyNext: number } =>
-          p.social !== null && p.scoreNext !== null && p.energyNext !== null
-      );
-
-    if (socialLagPairs.length >= 5) {
-      const rScoreNext = pearsonCorrelation(
-        socialLagPairs.map((p) => p.social),
-        socialLagPairs.map((p) => p.scoreNext)
-      );
-      if (rScoreNext !== null && Math.abs(rScoreNext) >= 0.2) {
-        lagImpacts.push({
-          factorLabel: "Скроллинг соцсетей (сегодня)",
-          targetLabel: "Оценка дня (завтра)",
-          deltaOrR: `r = ${rScoreNext > 0 ? "+" : ""}${rScoreNext.toFixed(2)}`,
-          isPositive: rScoreNext >= 0,
-          sampleCount: socialLagPairs.length,
-          description: `Минуты скроллинга накануне связаны с самооценкой следующего дня (${interpretR(rScoreNext).toLowerCase()})`,
-        });
-      }
-
-      const rEnergyNext = pearsonCorrelation(
-        socialLagPairs.map((p) => p.social),
-        socialLagPairs.map((p) => p.energyNext)
-      );
-      if (rEnergyNext !== null && Math.abs(rEnergyNext) >= 0.2) {
-        lagImpacts.push({
-          factorLabel: "Скроллинг соцсетей (сегодня)",
-          targetLabel: "Энергия (завтра)",
-          deltaOrR: `r = ${rEnergyNext > 0 ? "+" : ""}${rEnergyNext.toFixed(2)}`,
-          isPositive: rEnergyNext >= 0,
-          sampleCount: socialLagPairs.length,
-          description: `Минуты скроллинга накануне связаны с уровнем энергии следующего дня (${interpretR(rEnergyNext).toLowerCase()})`,
-        });
-      }
-    }
-
-    const focusLagPairs = consecutivePairs
-      .map(({ cur, next }) => ({
-        focus: cur.focusHours,
-        energyNext: next.energy,
-        scoreNext: next.score,
-      }))
-      .filter(
-        (p): p is { focus: number; energyNext: number; scoreNext: number } =>
-          p.focus !== null && p.energyNext !== null && p.scoreNext !== null
-      );
-
-    if (focusLagPairs.length >= 5) {
-      const rFocusScore = pearsonCorrelation(
-        focusLagPairs.map((p) => p.focus),
-        focusLagPairs.map((p) => p.scoreNext)
-      );
-      if (rFocusScore !== null && Math.abs(rFocusScore) >= 0.2) {
-        lagImpacts.push({
-          factorLabel: "Глубокая работа (сегодня)",
-          targetLabel: "Оценка дня (завтра)",
-          deltaOrR: `r = ${rFocusScore > 0 ? "+" : ""}${rFocusScore.toFixed(2)}`,
-          isPositive: rFocusScore >= 0,
-          sampleCount: focusLagPairs.length,
-          description: `Часы фокуса накануне связаны с ощущением продуктивности следующего дня (${interpretR(rFocusScore).toLowerCase()})`,
-        });
-      }
-    }
-
-    const screenLagPairs = consecutivePairs
-      .map(({ cur, next }) => ({
-        screen: cur.screenHours,
-        energyNext: next.energy,
-      }))
-      .filter(
-        (p): p is { screen: number; energyNext: number } =>
-          p.screen !== null && p.energyNext !== null
-      );
-
-    if (screenLagPairs.length >= 5) {
-      const rScreenEnergy = pearsonCorrelation(
-        screenLagPairs.map((p) => p.screen),
-        screenLagPairs.map((p) => p.energyNext)
-      );
-      if (rScreenEnergy !== null && Math.abs(rScreenEnergy) >= 0.2) {
-        lagImpacts.push({
-          factorLabel: "Экранное время (сегодня)",
-          targetLabel: "Энергия (завтра)",
-          deltaOrR: `r = ${rScreenEnergy > 0 ? "+" : ""}${rScreenEnergy.toFixed(2)}`,
-          isPositive: rScreenEnergy >= 0,
-          sampleCount: screenLagPairs.length,
-          description: `Длительность у экрана накануне связана с уровнем энергии следующего дня (${interpretR(rScreenEnergy).toLowerCase()})`,
-        });
-      }
-    }
   }
 
-  // ─── 4. Когортный анализ по лимиту соцсетей ───────────────────────────────
+  // ─── 4. Сравнение по лимиту соцсетей ──────────────────────────────────────
   const under: DailyRecord[] = [];
   const over: DailyRecord[] = [];
   for (const r of slice) {
@@ -622,7 +540,7 @@ export function analyzeRecords(
         summary:
           `При удержании лимита соцсетей (≤${SOCIAL_LIMIT_MIN} мин) средняя ${metricText} ` +
           `${comparison} на ${signedText} балла ` +
-          `(выборка: ${underVals.length} дн. нормы / ${overVals.length} дн. превышения)`,
+          `(${underVals.length} дн. нормы / ${overVals.length} дн. превышения)`,
       });
     }
   }
@@ -652,15 +570,11 @@ export function analyzeRecords(
       tracked.length > 0 ? Math.round((under.length / tracked.length) * 100) : 0,
   };
 
-  // ─── 6. Сравнение «Дни рекордов vs Остальные дни» ─────────────────────────
-  const prReport = analyzePRDayComparisons(
-    records,
+  // ─── 6. Сравнение «Дни рекордов в тренировках против остальных дней» ──────
+  const recordDaysReport = analyzeRecordDaysComparisons(
     slice,
-    options.prDaysByDate ?? new Map<string, PRDayEntry>(),
-    options.workoutDatesSet ?? new Set<string>(),
-    options.prCriterion ?? "max_reps",
-    options.prLagMode ?? "same_day",
-    options.prComparisonScope ?? "all_days"
+    options.recordDatesSet ?? new Set<string>(),
+    options.workoutDatesSet ?? new Set<string>()
   );
 
   return {
@@ -671,6 +585,6 @@ export function analyzeRecords(
     lagImpacts: lagImpacts.slice(0, 8),
     socialLimitInsights,
     socialStats,
-    prReport,
+    recordDaysReport,
   };
 }

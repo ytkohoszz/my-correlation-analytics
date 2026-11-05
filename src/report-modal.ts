@@ -1,29 +1,12 @@
 import { App, Modal } from "obsidian";
-import {
-  AnalyticsReport,
-  DailyRecord,
-  PRComparisonScope,
-  PRDayEntry,
-  PRLagMode,
-  PRMetricCriterion,
-} from "./types";
+import { AnalyticsReport, DailyRecord } from "./types";
 import { analyzeRecords, SOCIAL_LIMIT_MIN } from "./engine";
 import { renderScatterPlotSvg } from "./scatter-plot";
-import {
-  detectWorkoutPRDays,
-  formatExerciseVariantLabel,
-  r2,
-} from "./workout-pr";
+import { detectWorkoutRecordDays, r2 } from "./workout-pr";
 import type MyCorrelationAnalyticsPlugin from "./main";
 
 function isSocialMetric(label: string): boolean {
   return /соцсет/i.test(label);
-}
-
-function formatDateShortRu(iso: string): string {
-  const parts = iso.split("-");
-  if (parts.length !== 3) return iso;
-  return `${parts[2]}.${parts[1]}.${parts[0]}`;
 }
 
 export class CorrelationReportModal extends Modal {
@@ -31,11 +14,9 @@ export class CorrelationReportModal extends Modal {
   private allRecords: DailyRecord[];
   private currentDays: number = 30;
   private expandedCorrelationId: string | null = null;
+  private recordDetailsOpen: boolean | null = null;
 
-  private prCriterion: PRMetricCriterion;
-  private prLagMode: PRLagMode;
-  private prComparisonScope: PRComparisonScope;
-  private prDaysByDate: Map<string, PRDayEntry> = new Map();
+  private recordDatesSet: Set<string> = new Set();
   private workoutDatesSet: Set<string> = new Set();
 
   constructor(
@@ -48,25 +29,21 @@ export class CorrelationReportModal extends Modal {
     this.plugin = plugin;
     this.allRecords = allRecords;
     this.currentDays = initialDays;
-    this.prCriterion = plugin.settings.prCriterion;
-    this.prLagMode = plugin.settings.prLagMode;
-    this.prComparisonScope = plugin.settings.prComparisonScope;
   }
 
   async onOpen(): Promise<void> {
     const { modalEl } = this;
     modalEl.addClass("mod-correlation-report");
-    await this.reloadPRHistory();
+    await this.reloadWorkoutHistory();
     this.renderModal();
   }
 
-  private async reloadPRHistory(): Promise<void> {
-    const scan = await detectWorkoutPRDays(
+  private async reloadWorkoutHistory(): Promise<void> {
+    const scan = await detectWorkoutRecordDays(
       this.app,
-      this.plugin.settings.workoutsFolder,
-      this.prCriterion
+      this.plugin.settings.workoutsFolder
     );
-    this.prDaysByDate = scan.prDaysByDate;
+    this.recordDatesSet = new Set(scan.recordDaySummariesByDate.keys());
     this.workoutDatesSet = scan.workoutDatesSet;
   }
 
@@ -78,11 +55,8 @@ export class CorrelationReportModal extends Modal {
       this.allRecords,
       this.currentDays,
       {
-        prDaysByDate: this.prDaysByDate,
+        recordDatesSet: this.recordDatesSet,
         workoutDatesSet: this.workoutDatesSet,
-        prCriterion: this.prCriterion,
-        prLagMode: this.prLagMode,
-        prComparisonScope: this.prComparisonScope,
       }
     );
 
@@ -109,6 +83,7 @@ export class CorrelationReportModal extends Modal {
         if (this.currentDays !== p.days) {
           this.currentDays = p.days;
           this.expandedCorrelationId = null;
+          this.recordDetailsOpen = null;
           this.renderModal();
         }
       };
@@ -116,11 +91,11 @@ export class CorrelationReportModal extends Modal {
 
     head.createDiv({
       cls: "mca-sub",
-      text: `Выборка: ${report.totalRecords} дн. ежедневника · Тренировочных дней за период: ${report.prReport.totalWorkoutDaysInPeriod} · Дней с рекордом: ${report.prReport.totalPRDaysInPeriod}`,
+      text: `Дней в периоде: ${report.totalRecords} · Тренировочных дней: ${report.recordDaysReport.totalWorkoutDaysInPeriod} · Дней с рекордом: ${report.recordDaysReport.totalRecordDaysInPeriod}`,
     });
 
-    // ── НОВЫЙ БЛОК: Дни рекордов (PR) vs Остальные дни ──────────────────────
-    this.renderPRSection(contentEl, report);
+    // ── Сворачиваемый блок: Дни рекордов в тренировках против остальных дней ─
+    this.renderRecordDaysSection(contentEl, report);
 
     // ── Блок: сводка по скроллингу соцсетей ────────────────────────────────
     if (report.socialStats.daysTracked > 0) {
@@ -177,7 +152,7 @@ export class CorrelationReportModal extends Modal {
 
     // ── Блок 1: привычки внутри дня ────────────────────────────────────────
     contentEl.createEl("h3", {
-      text: "⚡ Наблюдаемые различия привычек (в тот же день)",
+      text: "⚡ Различия показателей в дни с привычками",
       cls: "mca-sec-title",
     });
     const habitsGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
@@ -210,9 +185,9 @@ export class CorrelationReportModal extends Modal {
       });
     }
 
-    // ── Блок 2: лаг-эффекты ────────────────────────────────────────────────
+    // ── Блок 2: связь со следующим днём ─────────────────────────────────────
     contentEl.createEl("h3", {
-      text: "⏳ Отложенные эффекты (на следующий день t → t+1)",
+      text: "⏳ Связь со следующим днём",
       cls: "mca-sec-title",
     });
     const lagGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
@@ -220,7 +195,7 @@ export class CorrelationReportModal extends Modal {
     if (report.lagImpacts.length === 0) {
       lagGrid.createDiv({
         cls: "mca-empty",
-        text: "Недостаточно пар последовательных дней для расчёта лаг-эффекта.",
+        text: "Недостаточно пар последовательных дней для расчёта.",
       });
     } else {
       report.lagImpacts.forEach((lag) => {
@@ -246,9 +221,9 @@ export class CorrelationReportModal extends Modal {
       });
     }
 
-    // ── Блок 3: корреляции + scatter plot ─────────────────────────────────
+    // ── Блок 3: взаимные связи показателей + график ─────────────────────────
     contentEl.createEl("h3", {
-      text: "📈 Связи показателей (нажми для графика рассеяния)",
+      text: "📈 Взаимные связи показателей (нажми для графика)",
       cls: "mca-sec-title",
     });
     const corrGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
@@ -256,7 +231,7 @@ export class CorrelationReportModal extends Modal {
     if (report.topCorrelations.length === 0) {
       corrGrid.createDiv({
         cls: "mca-empty",
-        text: "Заметных линейных корреляций за этот период не выявлено.",
+        text: "Заметных связей между показателями за этот период не выявлено.",
       });
     } else {
       report.topCorrelations.forEach((item) => {
@@ -275,7 +250,7 @@ export class CorrelationReportModal extends Modal {
 
         topRow.createSpan({
           cls: "mca-delta-badge",
-          text: `r = ${item.r > 0 ? "+" : ""}${item.r.toFixed(2)}`,
+          text: `${item.r > 0 ? "+" : ""}${item.r.toFixed(2)}`,
         });
 
         card.createDiv({
@@ -305,126 +280,69 @@ export class CorrelationReportModal extends Modal {
     }
   }
 
-  private renderPRSection(
+  private renderRecordDaysSection(
     container: HTMLElement,
     report: AnalyticsReport
   ): void {
-    const pr = report.prReport;
+    const rec = report.recordDaysReport;
 
-    container.createEl("h3", {
-      text: "🏆 Дни рекордов в тренировках (PR) vs Остальные дни",
-      cls: "mca-sec-title",
-    });
-
-    const prBox = container.createDiv({ cls: "mca-pr-box" });
-
-    // Панель переключателей: Лаг (Тот же день / Накануне), Критерий рекорда и База сравнения
-    const controlsRow = prBox.createDiv({ cls: "mca-pr-controls" });
-
-    const lagGroup = controlsRow.createDiv({ cls: "mca-pr-seg" });
-    const lagOptions: Array<{ mode: PRLagMode; label: string }> = [
-      { mode: "same_day", label: "В день рекорда (t)" },
-      { mode: "prev_day", label: "Накануне рекорда (t−1)" },
-    ];
-    lagOptions.forEach((opt) => {
-      const btn = lagGroup.createEl("button", {
-        cls: `mca-tab-btn ${this.prLagMode === opt.mode ? "is-active" : ""}`,
-        text: opt.label,
-        attr: { type: "button" },
-      });
-      btn.onclick = async () => {
-        if (this.prLagMode === opt.mode) return;
-        this.prLagMode = opt.mode;
-        this.plugin.settings.prLagMode = opt.mode;
-        await this.plugin.saveSettingsData();
-        this.renderModal();
-      };
-    });
-
-    const scopeSelect = controlsRow.createEl("select", {
-      cls: "dropdown mca-pr-select",
-      attr: { title: "С какими днями сравнивать дни рекордов" },
-    });
-    const scopes: Array<{ id: PRComparisonScope; label: string }> = [
-      { id: "all_days", label: "vs Все дни без рекорда" },
-      { id: "workout_days", label: "vs Тренировочные дни без рекорда" },
-    ];
-    scopes.forEach((sc) => {
-      const o = scopeSelect.createEl("option", {
-        value: sc.id,
-        text: sc.label,
-      });
-      if (this.prComparisonScope === sc.id) o.selected = true;
-    });
-    scopeSelect.onchange = async () => {
-      this.prComparisonScope = scopeSelect.value as PRComparisonScope;
-      this.plugin.settings.prComparisonScope = this.prComparisonScope;
-      await this.plugin.saveSettingsData();
-      this.renderModal();
+    const details = container.createEl("details", { cls: "mca-pr-details" });
+    const shouldBeOpen =
+      this.recordDetailsOpen !== null
+        ? this.recordDetailsOpen
+        : rec.totalRecordDaysInPeriod > 0;
+    details.open = shouldBeOpen;
+    details.ontoggle = () => {
+      this.recordDetailsOpen = details.open;
     };
 
-    const critSelect = controlsRow.createEl("select", {
-      cls: "dropdown mca-pr-select",
-      attr: { title: "Критерий засчитывания рекорда (первый подход всегда стартовая точка)" },
+    const summary = details.createEl("summary", { cls: "mca-pr-summary" });
+    summary.createSpan({
+      cls: "mca-pr-summary-title",
+      text: "🏆 Дни рекордов в тренировках против остальных дней",
     });
-    const criteria: Array<{ id: PRMetricCriterion; label: string }> = [
-      { id: "max_reps", label: "Критерий: Макс. повторы на весе" },
-      { id: "total_volume", label: "Критерий: Суммарный объём на весе" },
-      { id: "max_weight", label: "Критерий: Макс. доп. вес" },
-      { id: "any", label: "Критерий: Любой рекорд" },
-    ];
-    criteria.forEach((c) => {
-      const o = critSelect.createEl("option", { value: c.id, text: c.label });
-      if (this.prCriterion === c.id) o.selected = true;
+    summary.createSpan({
+      cls: "mca-pr-summary-meta",
+      text: `Дней рекордов: ${rec.totalRecordDaysInPeriod} · Остальных дней: ${rec.totalOtherDaysInPeriod}`,
     });
-    critSelect.onchange = async () => {
-      this.prCriterion = critSelect.value as PRMetricCriterion;
-      this.plugin.settings.prCriterion = this.prCriterion;
-      await this.plugin.saveSettingsData();
-      await this.reloadPRHistory();
-      this.renderModal();
-    };
 
-    if (pr.lowSampleOverall) {
-      prBox.createDiv({
-        cls: "mca-pr-warning",
-        text: `⚠️ Описательное сравнение (низкая выборка: дней с рекордом — ${pr.totalPRDaysInPeriod}, дней для сравнения — ${pr.totalComparisonDaysInPeriod}). Для статистической надёжности нужно минимум по 3 дня в каждой группе.`,
-      });
-    }
+    const body = details.createDiv({ cls: "mca-pr-body" });
 
-    if (pr.totalPRDaysInPeriod === 0 || pr.rows.length === 0) {
-      prBox.createDiv({
+    if (rec.totalRecordDaysInPeriod === 0 || rec.rows.length === 0) {
+      body.createDiv({
         cls: "mca-empty",
-        text: "За выбранный период новых рекордов (превышающих стартовую базу) не зафиксировано. Попробуй переключить период на «90 дней» или «Все время».",
+        text: "За выбранный период дней с новыми рекордами не найдено. Переключи период на «90 дней» или «Все время».",
       });
       return;
     }
 
-    // Сводная таблица «В дни рекордов vs В остальные дни»
-    const tableWrap = prBox.createDiv({ cls: "mca-pr-table-wrap" });
+    if (rec.lowSampleOverall) {
+      body.createDiv({
+        cls: "mca-pr-warning",
+        text: `⚠️ Мало дней с рекордами за выбранный период (${rec.totalRecordDaysInPeriod} дн.). Таблица ниже показывает простое сравнение средних, но для уверенных выводов нужно хотя бы 3 дня рекордов.`,
+      });
+    }
+
+    const tableWrap = body.createDiv({ cls: "mca-pr-table-wrap" });
     const table = tableWrap.createEl("table", { cls: "mca-pr-table" });
     const thead = table.createEl("thead");
     const trH = thead.createEl("tr");
-    trH.createEl("th", {
-      text:
-        this.prLagMode === "prev_day"
-          ? "Метрика (накануне t−1)"
-          : "Метрика (в день t)",
-    });
-    trH.createEl("th", { text: "Дни рекордов" });
-    trH.createEl("th", {
-      text:
-        this.prComparisonScope === "workout_days"
-          ? "Трен. дни без PR"
-          : "Остальные дни",
-    });
-    trH.createEl("th", { text: "Разница (Δ)" });
-    trH.createEl("th", { text: "Выборка (PR / Ост.)" });
+    trH.createEl("th", { text: "Показатель" });
+    trH.createEl("th", { text: "В дни рекордов" });
+    trH.createEl("th", { text: "В остальные дни" });
+    trH.createEl("th", { text: "Разница" });
+    trH.createEl("th", { text: "Число дней" });
 
     const tbody = table.createEl("tbody");
-    for (const row of pr.rows) {
+    for (const row of rec.rows) {
       const tr = tbody.createEl("tr");
-      tr.createEl("td", { cls: "mca-pr-td-name", text: row.label });
+
+      const tdName = tr.createEl("td", { cls: "mca-pr-td-name" });
+      tdName.createDiv({ cls: "mca-pr-metric-title", text: row.label });
+      tdName.createDiv({
+        cls: `mca-pr-metric-conclusion ${row.lowSample ? "is-low-sample" : ""}`,
+        text: row.conclusion,
+      });
 
       const fmtVal = (val: number | null) => {
         if (val === null) return "—";
@@ -434,11 +352,11 @@ export class CorrelationReportModal extends Modal {
 
       tr.createEl("td", {
         cls: "mca-pr-td-num",
-        text: fmtVal(row.avgPR),
+        text: fmtVal(row.avgRecordDays),
       });
       tr.createEl("td", {
         cls: "mca-pr-td-num",
-        text: fmtVal(row.avgOther),
+        text: fmtVal(row.avgOtherDays),
       });
 
       const tdDelta = tr.createEl("td", { cls: "mca-pr-td-delta" });
@@ -446,74 +364,27 @@ export class CorrelationReportModal extends Modal {
         tdDelta.setText("—");
       } else {
         const sign = row.delta > 0 ? "+" : "";
-        const unitSuffix = row.kind === "habit_pct" ? " п.п." : ` ${row.unit}`;
+        const unitSuffix = row.kind === "habit_pct" ? "%" : ` ${row.unit}`;
         const isGood =
           row.delta === 0
             ? null
             : row.higherIsBetter
               ? row.delta > 0
               : row.delta < 0;
-        const badge = tdDelta.createSpan({
+        tdDelta.createSpan({
           cls:
             "mca-delta-badge" +
             (isGood === true ? " is-up" : isGood === false ? " is-down" : ""),
           text: `${sign}${r2(row.delta).toLocaleString("ru-RU")}${unitSuffix}`,
         });
-        if (row.lowSample) {
-          badge.setAttribute("title", "Низкая выборка (< 3 дней в одной из групп)");
-        }
       }
 
       const tdSample = tr.createEl("td", { cls: "mca-pr-td-sample" });
       tdSample.setText(
-        `${row.countPR} / ${row.countOther} дн.${row.lowSample ? " ⚠️ малая" : ""}`
+        `${row.countRecordDays} и ${row.countOtherDays} дн.${
+          row.lowSample ? " ⚠️ мало" : ""
+        }`
       );
-    }
-
-    // Список дней рекордов с перечнем упражнений
-    const details = prBox.createEl("details", { cls: "mca-pr-days-details" });
-    details.open = true;
-    details.createEl("summary", {
-      cls: "mca-pr-days-summary",
-      text: `Журнал дней рекордов за период (${pr.prDays.length} дн.)`,
-    });
-
-    const daysList = details.createDiv({ cls: "mca-pr-days-list" });
-    for (const dayEntry of pr.prDays) {
-      const row = daysList.createDiv({ cls: "mca-pr-day-row" });
-      const dateLink = row.createEl("a", {
-        cls: "internal-link mca-pr-day-date",
-        text: formatDateShortRu(dayEntry.dateISO),
-        attr: { href: dayEntry.workoutPath },
-      });
-      dateLink.onclick = (e) => {
-        e.preventDefault();
-        this.close();
-        void this.app.workspace.openLinkText(dayEntry.workoutPath, "", false);
-      };
-
-      const badgesWrap = row.createDiv({ cls: "mca-pr-day-events" });
-      for (const ev of dayEntry.events) {
-        const varLabel = formatExerciseVariantLabel(
-          ev.exerciseName,
-          ev.variant,
-          ev.loadType,
-          ev.weight
-        );
-        let achievementText = "";
-        if (ev.criterionTriggered === "max_weight") {
-          achievementText = `новый вес +${r2(ev.newValue)} кг (пред. +${r2(ev.previousBest)} кг)`;
-        } else if (ev.criterionTriggered === "total_volume") {
-          achievementText = `объём ${r2(ev.newValue)} ${ev.unit} (пред. ${r2(ev.previousBest)} · подходы: ${ev.setsSummary})`;
-        } else {
-          achievementText = `${r2(ev.newValue)} ${ev.unit} (пред. ${r2(ev.previousBest)} · подходы: ${ev.setsSummary})`;
-        }
-
-        badgesWrap.createSpan({
-          cls: "mca-pr-event-pill",
-          text: `🥇 ${varLabel}: ${achievementText}`,
-        });
-      }
     }
   }
 
