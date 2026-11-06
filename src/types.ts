@@ -1,3 +1,4 @@
+// src/types.ts
 export interface CorrelationAnalyticsSettings {
   diaryFolder: string;
   workoutsFolder: string;
@@ -33,6 +34,44 @@ export interface DailyRecord {
     диета: boolean | null;
     без_соцсетей: boolean | null;
   };
+}
+
+export type MetricGroup =
+  | "nutrition"
+  | "body"
+  | "sleep"
+  | "wellbeing"
+  | "activity"
+  | "focus"
+  | "digital"
+  | "reading"
+  | "discipline";
+
+export type NumericMetricKey = keyof Omit<
+  DailyRecord,
+  "dateISO" | "habits" | "bedtime" | "wakeup"
+>;
+
+export type HabitMetricKey = keyof DailyRecord["habits"];
+
+export type WhitelistSourceType = "numeric" | "habit";
+
+export type PairDirection = "→" | "↔";
+
+export interface WhitelistPairSpec {
+  id: string;
+  leftKey: NumericMetricKey | HabitMetricKey;
+  leftType: WhitelistSourceType;
+  leftGroup: MetricGroup;
+  leftLabel: string;
+  rightKey: NumericMetricKey;
+  rightGroup: MetricGroup;
+  rightLabel: string;
+  rightUnit: string;
+  direction: PairDirection;
+  lagDays: number;
+  label: string;
+  rationale: string;
 }
 
 export type ExerciseLoadType = "bw" | "weighted" | "unspec";
@@ -84,6 +123,13 @@ export interface MetricCorrelation {
   label: string;
   interpretation: string;
   points: ScatterPoint[];
+  kind?: "correlation" | "mean_diff";
+  direction?: PairDirection;
+  lagDays?: number;
+  valueBadge?: string;
+  strengthLabel?: string;
+  isSignificant?: boolean;
+  isPositive?: boolean;
 }
 
 export interface HabitImpact {
@@ -131,6 +177,7 @@ export interface AnalyticsReport {
   periodDays: number;
   totalRecords: number;
   topCorrelations: MetricCorrelation[];
+  insufficientWhitelistedCount?: number;
   topHabitImpacts: HabitImpact[];
   lagImpacts: LagImpact[];
   socialLimitInsights: SocialLimitInsight[];

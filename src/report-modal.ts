@@ -1,6 +1,13 @@
+// src/report-modal.ts
 import { App, Modal } from "obsidian";
 import { AnalyticsReport, DailyRecord } from "./types";
-import { analyzeRecords, SOCIAL_LIMIT_MIN } from "./engine";
+import {
+  analyzeRecords,
+  DEFAULT_VISIBLE_CORRELATIONS,
+  MIN_PAIR_SAMPLE,
+  MIN_SIGNIFICANT_R,
+  SOCIAL_LIMIT_MIN,
+} from "./engine";
 import { renderScatterPlotSvg } from "./scatter-plot";
 import { detectWorkoutRecordDays, r2 } from "./workout-pr";
 import type MyCorrelationAnalyticsPlugin from "./main";
@@ -14,7 +21,8 @@ export class CorrelationReportModal extends Modal {
   private allRecords: DailyRecord[];
   private currentDays: number = 30;
   private expandedCorrelationId: string | null = null;
-  private recordDetailsOpen: boolean | null = null;
+  private recordDetailsOpen: boolean = false;
+  private showAllCorrelations: boolean = false;
 
   private recordDatesSet: Set<string> = new Set();
   private workoutDatesSet: Set<string> = new Set();
@@ -83,7 +91,7 @@ export class CorrelationReportModal extends Modal {
         if (this.currentDays !== p.days) {
           this.currentDays = p.days;
           this.expandedCorrelationId = null;
-          this.recordDetailsOpen = null;
+          this.showAllCorrelations = false;
           this.renderModal();
         }
       };
@@ -216,7 +224,7 @@ export class CorrelationReportModal extends Modal {
 
         card.createDiv({
           cls: "mca-card-desc",
-          text: `${lag.description} (${lag.sampleCount} пар дней)`,
+          text: `${lag.description} (n = ${lag.sampleCount} дн.)`,
         });
       });
     }
@@ -231,13 +239,20 @@ export class CorrelationReportModal extends Modal {
     if (report.topCorrelations.length === 0) {
       corrGrid.createDiv({
         cls: "mca-empty",
-        text: "Заметных связей между показателями за этот период не выявлено.",
+        text: `Недостаточно данных для надёжной связи (нужно n ≥ ${MIN_PAIR_SAMPLE} парных дней и |r| ≥ ${MIN_SIGNIFICANT_R}). Переключи период на «90 дней» или «Все время».`,
       });
     } else {
-      report.topCorrelations.forEach((item) => {
+      const visibleCorrelations = this.showAllCorrelations
+        ? report.topCorrelations
+        : report.topCorrelations.slice(0, DEFAULT_VISIBLE_CORRELATIONS);
+
+      visibleCorrelations.forEach((item) => {
         const isExpanded = this.expandedCorrelationId === item.id;
+        const isLag = (item.lagDays ?? 0) > 0;
         const card = corrGrid.createDiv({
-          cls: `mca-card is-interactive ${isExpanded ? "is-expanded" : ""}`,
+          cls: `mca-card is-interactive ${isLag ? "is-lag-card" : ""} ${
+            isExpanded ? "is-expanded" : ""
+          }`,
         });
 
         const topRow = card.createDiv({ cls: "mca-card-top" });
@@ -248,14 +263,17 @@ export class CorrelationReportModal extends Modal {
           text: `${isSocial ? "📱 " : ""}${item.label}`,
         });
 
+        const badgeText =
+          item.valueBadge ?? `${item.r > 0 ? "+" : ""}${item.r.toFixed(2)}`;
+        const isPositive = item.isPositive ?? item.r > 0;
         topRow.createSpan({
-          cls: "mca-delta-badge",
-          text: `${item.r > 0 ? "+" : ""}${item.r.toFixed(2)}`,
+          cls: `mca-delta-badge ${isPositive ? "is-up" : "is-down"}`,
+          text: badgeText,
         });
 
         card.createDiv({
           cls: "mca-card-desc",
-          text: `${item.interpretation} (${item.sampleCount} дн.) · ${
+          text: `${item.interpretation} · ${
             isExpanded ? "свернуть ▲" : "график ▾"
           }`,
         });
@@ -277,6 +295,23 @@ export class CorrelationReportModal extends Modal {
           plotHost.appendChild(svg);
         }
       });
+
+      if (report.topCorrelations.length > DEFAULT_VISIBLE_CORRELATIONS) {
+        const hiddenCount =
+          report.topCorrelations.length - DEFAULT_VISIBLE_CORRELATIONS;
+        const moreWrap = contentEl.createDiv({ cls: "mca-more-wrap" });
+        const moreBtn = moreWrap.createEl("button", {
+          cls: "mca-more-btn",
+          text: this.showAllCorrelations
+            ? "Свернуть дополнительные связи ▲"
+            : `Показать ещё (${hiddenCount}) ▾`,
+          attr: { type: "button" },
+        });
+        moreBtn.onclick = () => {
+          this.showAllCorrelations = !this.showAllCorrelations;
+          this.renderModal();
+        };
+      }
     }
   }
 
@@ -285,28 +320,50 @@ export class CorrelationReportModal extends Modal {
     report: AnalyticsReport
   ): void {
     const rec = report.recordDaysReport;
+    const isOpen = this.recordDetailsOpen;
 
-    const details = container.createEl("details", { cls: "mca-pr-details" });
-    const shouldBeOpen =
-      this.recordDetailsOpen !== null
-        ? this.recordDetailsOpen
-        : rec.totalRecordDaysInPeriod > 0;
-    details.open = shouldBeOpen;
-    details.ontoggle = () => {
-      this.recordDetailsOpen = details.open;
-    };
+    const section = container.createDiv({
+      cls: `mca-pr-details ${isOpen ? "is-open" : ""}`,
+    });
 
-    const summary = details.createEl("summary", { cls: "mca-pr-summary" });
-    summary.createSpan({
+    const headerBtn = section.createEl("button", {
+      cls: "mca-pr-summary",
+      attr: {
+        type: "button",
+        "aria-expanded": String(isOpen),
+      },
+    });
+
+    const titleWrap = headerBtn.createDiv({ cls: "mca-pr-summary-left" });
+    titleWrap.createSpan({
+      cls: "mca-pr-chevron",
+      text: "▸",
+      attr: { "aria-hidden": "true" },
+    });
+    titleWrap.createSpan({
       cls: "mca-pr-summary-title",
       text: "🏆 Дни рекордов в тренировках против остальных дней",
     });
-    summary.createSpan({
+
+    headerBtn.createSpan({
       cls: "mca-pr-summary-meta",
-      text: `Дней рекордов: ${rec.totalRecordDaysInPeriod} · Остальных дней: ${rec.totalOtherDaysInPeriod}`,
+      text: `Рекордов: ${rec.totalRecordDaysInPeriod} · Остальных: ${rec.totalOtherDaysInPeriod}`,
     });
 
-    const body = details.createDiv({ cls: "mca-pr-body" });
+    const collapseWrap = section.createDiv({
+      cls: `mca-pr-collapse ${isOpen ? "is-open" : ""}`,
+    });
+    const collapseInner = collapseWrap.createDiv({
+      cls: "mca-pr-collapse-inner",
+    });
+    const body = collapseInner.createDiv({ cls: "mca-pr-body" });
+
+    headerBtn.onclick = () => {
+      this.recordDetailsOpen = !this.recordDetailsOpen;
+      section.toggleClass("is-open", this.recordDetailsOpen);
+      collapseWrap.toggleClass("is-open", this.recordDetailsOpen);
+      headerBtn.setAttribute("aria-expanded", String(this.recordDetailsOpen));
+    };
 
     if (rec.totalRecordDaysInPeriod === 0 || rec.rows.length === 0) {
       body.createDiv({
