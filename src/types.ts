@@ -102,7 +102,6 @@ export interface RecordDayMetricRow {
 
 export interface RecordDaysReport {
   totalRecordDaysInPeriod: number;
-  totalOtherDaysInPeriod: number;
   totalWorkoutDaysInPeriod: number;
   lowSampleOverall: boolean;
   rows: RecordDayMetricRow[];

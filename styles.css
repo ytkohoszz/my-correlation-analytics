@@ -248,8 +248,7 @@
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 8px;
   padding: 2px 0;
   margin: 0;
@@ -289,17 +288,6 @@
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--text-normal);
-}
-
-.mca-pr-summary-meta {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  font-variant-numeric: tabular-nums;
 }
 
 .mca-pr-collapse {

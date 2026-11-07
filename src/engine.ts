@@ -646,7 +646,6 @@ export function analyzeRecordDaysComparisons(
 
   return {
     totalRecordDaysInPeriod: recordDays.length,
-    totalOtherDaysInPeriod: otherDays.length,
     totalWorkoutDaysInPeriod,
     lowSampleOverall:
       recordDays.length < MIN_GROUP_DAYS || otherDays.length < MIN_GROUP_DAYS,

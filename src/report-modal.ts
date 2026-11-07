@@ -345,11 +345,6 @@ export class CorrelationReportModal extends Modal {
       text: "🏆 Дни рекордов в тренировках против остальных дней",
     });
 
-    headerBtn.createSpan({
-      cls: "mca-pr-summary-meta",
-      text: `Рекордов: ${rec.totalRecordDaysInPeriod} · Остальных: ${rec.totalOtherDaysInPeriod}`,
-    });
-
     const collapseWrap = section.createDiv({
       cls: `mca-pr-collapse ${isOpen ? "is-open" : ""}`,
     });
