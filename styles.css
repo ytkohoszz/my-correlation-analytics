@@ -404,54 +404,6 @@
   text-anchor: start;
 }
 
-/* ── Блок соцсетей (KPI-сетка Уровня 2) ─────────────────────────────────── */
-
-.mod-correlation-report .mca-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.mod-correlation-report .mca-kpi-cell {
-  padding: 9px 11px;
-  border: none;
-  border-radius: var(--radius-sm, 10px);
-  -electron-corner-smoothing: var(--corner-smoothing, 60%);
-  background: var(--background-primary);
-  box-shadow: var(--shadow-input, 0 0 0 0.5px var(--trans-faint-20, var(--background-modifier-border)));
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.mod-correlation-report .mca-kpi-label {
-  font-size: 0.7rem;
-  color: var(--icon-color, var(--text-muted));
-}
-
-.mod-correlation-report .mca-kpi-val-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.mod-correlation-report .mca-kpi-val {
-  font-size: 0.96rem;
-  font-weight: var(--font-bold, 700);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-base-100, var(--text-normal));
-}
-
-.mod-correlation-report .mca-kpi-sub {
-  font-size: 0.72rem;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.mod-correlation-report .mca-social-rows {
-  margin-top: 2px;
-}
-
 /* ── Сворачиваемый блок «Дни рекордов» + Таблица Velocity ───────────────── */
 
 .mod-correlation-report .mca-pr-details {
@@ -630,8 +582,4 @@ body.is-tablet .mod-correlation-report .mca-corr-card {
 body.is-mobile .mod-correlation-report button.mca-pr-summary,
 body.is-tablet .mod-correlation-report button.mca-pr-summary {
   min-height: 36px;
-}
-
-body.is-mobile .mod-correlation-report .mca-kpi-grid {
-  grid-template-columns: 1fr;
 }

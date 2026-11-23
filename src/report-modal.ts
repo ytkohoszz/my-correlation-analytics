@@ -6,7 +6,6 @@ import {
   DEFAULT_VISIBLE_CORRELATIONS,
   MIN_PAIR_SAMPLE,
   MIN_SIGNIFICANT_R,
-  SOCIAL_LIMIT_MIN,
 } from "./engine";
 import { renderScatterPlotSvg } from "./scatter-plot";
 import { detectWorkoutRecordDays, r2 } from "./workout-pr";
@@ -132,15 +131,7 @@ export class CorrelationReportModal extends Modal {
       this.renderLagSection(root, report);
     }
 
-    // ── 4. Соцсети (единый компактный блок) ────────────────────────────────
-    if (
-      report.socialStats.daysTracked > 0 ||
-      report.socialLimitInsights.length > 0
-    ) {
-      this.renderSocialSection(root, report);
-    }
-
-    // ── 5. Дни рекордов (сворачиваемый блок) ───────────────────────────────
+    // ── 4. Дни рекордов (сворачиваемый блок) ───────────────────────────────
     this.renderRecordDaysSection(root, report);
   }
 
@@ -333,79 +324,6 @@ export class CorrelationReportModal extends Modal {
         text: lag.deltaOrR,
       });
     });
-  }
-
-  private renderSocialSection(
-    container: HTMLElement,
-    report: AnalyticsReport
-  ): void {
-    const island = container.createDiv({ cls: "mca-island" });
-    const secHead = island.createDiv({ cls: "mca-sec-head" });
-    secHead.createSpan({ cls: "mca-sec-title", text: "Соцсети" });
-    secHead.createSpan({
-      cls: "mca-sec-hint",
-      text: `лимит ≤ ${SOCIAL_LIMIT_MIN} мин`,
-    });
-
-    const s = report.socialStats;
-    if (s.daysTracked > 0) {
-      const kpiGrid = island.createDiv({ cls: "mca-kpi-grid" });
-
-      const addKpi = (label: string, val: string, sub?: string) => {
-        const cell = kpiGrid.createDiv({ cls: "mca-kpi-cell" });
-        cell.createDiv({ cls: "mca-kpi-label", text: label });
-        const valRow = cell.createDiv({ cls: "mca-kpi-val-row" });
-        valRow.createSpan({ cls: "mca-kpi-val", text: val });
-        if (sub) {
-          valRow.createSpan({ cls: "mca-kpi-sub", text: sub });
-        }
-      };
-
-      addKpi(
-        "Среднее",
-        s.avgSocialMinutes !== null
-          ? `${Math.round(s.avgSocialMinutes)} мин`
-          : "—"
-      );
-      addKpi(
-        "В лимите",
-        `${s.percentWithinLimit}%`,
-        `${s.daysWithinLimit}/${s.daysTracked}`
-      );
-      addKpi(
-        "Максимум",
-        s.maxSocialMinutes !== null ? `${s.maxSocialMinutes} мин` : "—"
-      );
-    }
-
-    if (report.socialLimitInsights.length > 0) {
-      const list = island.createDiv({ cls: "mca-rows-list mca-social-rows" });
-      report.socialLimitInsights.forEach((item) => {
-        const row = list.createDiv({
-          cls: "mca-list-row",
-          attr: {
-            title: `В лимите: ${item.avgUnderLimit.toFixed(1)} (${item.daysUnder} дн.) · Выше: ${item.avgOverLimit.toFixed(1)} (${item.daysOver} дн.)`,
-          },
-        });
-
-        row.createSpan({
-          cls: "mca-row-label",
-          text: `В лимите → ${item.metric === "score" ? "Оценка" : "Энергия"}`,
-        });
-
-        const right = row.createDiv({ cls: "mca-row-right" });
-        right.createSpan({
-          cls: "mca-row-meta",
-          text: `${item.avgUnderLimit.toFixed(1)} / ${item.avgOverLimit.toFixed(1)}`,
-        });
-
-        const isUp = item.delta > 0;
-        right.createSpan({
-          cls: `mca-badge ${isUp ? "is-up" : "is-down"}`,
-          text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}`,
-        });
-      });
-    }
   }
 
   private renderRecordDaysSection(
