@@ -60,8 +60,7 @@ export function renderScatterPlotSvg(
     trend.setAttribute("y1", String(toSvgY(startY)));
     trend.setAttribute("x2", String(toSvgX(endX)));
     trend.setAttribute("y2", String(toSvgY(endY)));
-    trend.setAttribute("class", "mca-trend-line");
-    trend.setAttribute("stroke", r >= 0 ? "#4aab80" : "#d85b57");
+    trend.setAttribute("class", `mca-trend-line ${r >= 0 ? "is-up" : "is-down"}`);
     svg.appendChild(trend);
   }
 

@@ -12,8 +12,19 @@ import { renderScatterPlotSvg } from "./scatter-plot";
 import { detectWorkoutRecordDays, r2 } from "./workout-pr";
 import type MyCorrelationAnalyticsPlugin from "./main";
 
-function isSocialMetric(label: string): boolean {
-  return /соцсет/i.test(label);
+const DEFAULT_VISIBLE_HABITS = 6;
+
+function cleanLagPart(label: string): string {
+  return label
+    .replace(/\s*\((сегодня|завтра)\)/gi, "")
+    .replace(/^Оценку дня$/i, "Оценка")
+    .replace(/^Энергию$/i, "Энергия")
+    .trim();
+}
+
+function extractPairMeans(description: string): string {
+  const m = description.match(/(\d+(?:[.,]\d+)?)\s+против\s+(\d+(?:[.,]\d+)?)/);
+  return m ? `${m[1]} / ${m[2]}` : "";
 }
 
 export class CorrelationReportModal extends Modal {
@@ -23,6 +34,7 @@ export class CorrelationReportModal extends Modal {
   private expandedCorrelationId: string | null = null;
   private recordDetailsOpen: boolean = false;
   private showAllCorrelations: boolean = false;
+  private showAllHabits: boolean = false;
 
   private recordDatesSet: Set<string> = new Set();
   private workoutDatesSet: Set<string> = new Set();
@@ -68,250 +80,331 @@ export class CorrelationReportModal extends Modal {
       }
     );
 
-    // ── Шапка и переключатель периодов ──────────────────────────────────────
-    const head = contentEl.createDiv({ cls: "mca-head" });
-    const titleRow = head.createDiv({ cls: "mca-title-row" });
-    titleRow.createEl("h2", { text: "📊 Аналитика корреляций ежедневника" });
+    const root = contentEl.createDiv({ cls: "mca-root" });
 
-    const tabsRow = head.createDiv({ cls: "mca-tabs-row" });
+    // ── Шапка + сегментный переключатель периодов ──────────────────────────
+    const head = root.createDiv({ cls: "mca-head" });
+    const headTop = head.createDiv({ cls: "mca-head-top" });
+
+    const titleWrap = headTop.createDiv({ cls: "mca-title-wrap" });
+    titleWrap.createEl("h2", { cls: "mca-title", text: "Аналитика связей" });
+    titleWrap.createDiv({
+      cls: "mca-meta-line",
+      text: `${report.totalRecords} дн. · ${report.recordDaysReport.totalWorkoutDaysInPeriod} трен. · ${report.recordDaysReport.totalRecordDaysInPeriod} рек.`,
+    });
+
+    const segTrack = headTop.createDiv({
+      cls: "mca-seg-track",
+      attr: { role: "tablist" },
+    });
     const periods: Array<{ days: number; label: string }> = [
-      { days: 30, label: "30 дней" },
-      { days: 90, label: "90 дней" },
-      { days: 0, label: "Все время" },
+      { days: 30, label: "30 дн." },
+      { days: 90, label: "90 дн." },
+      { days: 0, label: "Всё" },
     ];
 
     periods.forEach((p) => {
       const isAct = this.currentDays === p.days;
-      const tabBtn = tabsRow.createEl("button", {
-        cls: `mca-tab-btn ${isAct ? "is-active" : ""}`,
+      const btn = segTrack.createEl("button", {
+        cls: `mca-seg-btn ${isAct ? "is-active" : ""}`,
         text: p.label,
-        attr: { type: "button" },
+        attr: { type: "button", role: "tab", "aria-selected": String(isAct) },
       });
-      tabBtn.onclick = () => {
+      btn.onclick = () => {
         if (this.currentDays !== p.days) {
           this.currentDays = p.days;
           this.expandedCorrelationId = null;
           this.showAllCorrelations = false;
+          this.showAllHabits = false;
           this.renderModal();
         }
       };
     });
 
-    head.createDiv({
-      cls: "mca-sub",
-      text: `Дней в периоде: ${report.totalRecords} · Тренировочных дней: ${report.recordDaysReport.totalWorkoutDaysInPeriod} · Дней с рекордом: ${report.recordDaysReport.totalRecordDaysInPeriod}`,
-    });
+    // ── 1. Ключевые связи (с раскрываемым графиком) ────────────────────────
+    this.renderCorrelationsSection(root, report);
 
-    // ── Сворачиваемый блок: Дни рекордов в тренировках против остальных дней ─
-    this.renderRecordDaysSection(contentEl, report);
+    // ── 2. Привычки внутри дня ─────────────────────────────────────────────
+    this.renderHabitsSection(root, report);
 
-    // ── Блок: сводка по скроллингу соцсетей ────────────────────────────────
-    if (report.socialStats.daysTracked > 0) {
-      contentEl.createEl("h3", {
-        text: "📱 Скроллинг соцсетей (сводка за период)",
-        cls: "mca-sec-title",
-      });
-      const socialPanel = contentEl.createDiv({
-        cls: "mca-card mca-social-panel",
-      });
-      const s = report.socialStats;
-
-      const rowAvg = socialPanel.createDiv({ cls: "mca-card-top" });
-      rowAvg.createSpan({
-        cls: "mca-card-label",
-        text: `Среднее время скроллинга (${s.daysTracked} дн.)`,
-      });
-      rowAvg.createSpan({
-        cls: "mca-delta-badge",
-        text: `${s.avgSocialMinutes?.toFixed(1) ?? "—"} мин`,
-      });
-
-      socialPanel.createDiv({
-        cls: "mca-card-desc",
-        text:
-          `🛡️ Дней в пределах лимита (≤${SOCIAL_LIMIT_MIN} мин): ` +
-          `${s.daysWithinLimit} из ${s.daysTracked} (${s.percentWithinLimit}%) · ` +
-          `Максимум за день: ${s.maxSocialMinutes ?? "—"} мин`,
-      });
+    // ── 3. Эффект на следующий день ────────────────────────────────────────
+    if (report.lagImpacts.length > 0) {
+      this.renderLagSection(root, report);
     }
 
-    // ── Блок: влияние превышения лимита соцсетей ───────────────────────────
-    if (report.socialLimitInsights.length > 0) {
-      contentEl.createEl("h3", {
-        text: `🛡️ Влияние превышения лимита соцсетей (>${SOCIAL_LIMIT_MIN} мин)`,
-        cls: "mca-sec-title",
-      });
-      const socialGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
-
-      report.socialLimitInsights.forEach((item) => {
-        const card = socialGrid.createDiv({ cls: "mca-card" });
-        const topRow = card.createDiv({ cls: "mca-card-top" });
-        topRow.createSpan({
-          cls: "mca-card-label",
-          text: `📱 Соцсети → ${item.metric === "score" ? "Оценка" : "Энергия"}`,
-        });
-        topRow.createSpan({
-          cls: `mca-delta-badge ${item.delta > 0 ? "is-up" : "is-down"}`,
-          text: (item.delta > 0 ? "+" : "") + item.delta.toFixed(1),
-        });
-        card.createDiv({ cls: "mca-card-desc", text: item.summary });
-      });
+    // ── 4. Соцсети (единый компактный блок) ────────────────────────────────
+    if (
+      report.socialStats.daysTracked > 0 ||
+      report.socialLimitInsights.length > 0
+    ) {
+      this.renderSocialSection(root, report);
     }
 
-    // ── Блок 1: привычки внутри дня ────────────────────────────────────────
-    contentEl.createEl("h3", {
-      text: "⚡ Различия показателей в дни с привычками",
-      cls: "mca-sec-title",
-    });
-    const habitsGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
+    // ── 5. Дни рекордов (сворачиваемый блок) ───────────────────────────────
+    this.renderRecordDaysSection(root, report);
+  }
 
-    if (report.topHabitImpacts.length === 0) {
-      habitsGrid.createDiv({
-        cls: "mca-empty",
-        text: "Недостаточно данных для сравнения привычек за выбранный период.",
-      });
-    } else {
-      report.topHabitImpacts.forEach((item) => {
-        const card = habitsGrid.createDiv({ cls: "mca-card" });
-        const topRow = card.createDiv({ cls: "mca-card-top" });
-
-        const isSocialHabit = item.habitKey === "без_соцсетей";
-        topRow.createSpan({
-          cls: "mca-card-label",
-          text: `${isSocialHabit ? "📱 " : ""}${item.habitName} → ${
-            item.targetMetric === "score" ? "Оценка" : "Энергия"
-          }`,
-        });
-
-        const isPositive = item.delta > 0;
-        topRow.createSpan({
-          cls: `mca-delta-badge ${isPositive ? "is-up" : "is-down"}`,
-          text: (isPositive ? "+" : "") + item.delta.toFixed(1),
-        });
-
-        card.createDiv({ cls: "mca-card-desc", text: item.summary });
-      });
+  private renderCorrelationsSection(
+    container: HTMLElement,
+    report: AnalyticsReport
+  ): void {
+    const island = container.createDiv({ cls: "mca-island" });
+    const secHead = island.createDiv({ cls: "mca-sec-head" });
+    secHead.createSpan({ cls: "mca-sec-title", text: "Ключевые связи" });
+    if (report.topCorrelations.length > 0) {
+      secHead.createSpan({ cls: "mca-sec-hint", text: "нажмите для графика" });
     }
-
-    // ── Блок 2: связь со следующим днём ─────────────────────────────────────
-    contentEl.createEl("h3", {
-      text: "⏳ Связь со следующим днём",
-      cls: "mca-sec-title",
-    });
-    const lagGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
-
-    if (report.lagImpacts.length === 0) {
-      lagGrid.createDiv({
-        cls: "mca-empty",
-        text: "Недостаточно пар последовательных дней для расчёта.",
-      });
-    } else {
-      report.lagImpacts.forEach((lag) => {
-        const card = lagGrid.createDiv({ cls: "mca-card is-lag-card" });
-        const topRow = card.createDiv({ cls: "mca-card-top" });
-
-        const isSocial =
-          isSocialMetric(lag.factorLabel) || isSocialMetric(lag.targetLabel);
-        topRow.createSpan({
-          cls: "mca-card-label",
-          text: `${isSocial ? "📱 " : ""}${lag.factorLabel} → ${lag.targetLabel}`,
-        });
-
-        topRow.createSpan({
-          cls: `mca-delta-badge ${lag.isPositive ? "is-up" : "is-down"}`,
-          text: lag.deltaOrR,
-        });
-
-        card.createDiv({
-          cls: "mca-card-desc",
-          text: `${lag.description} (n = ${lag.sampleCount} дн.)`,
-        });
-      });
-    }
-
-    // ── Блок 3: взаимные связи показателей + график ─────────────────────────
-    contentEl.createEl("h3", {
-      text: "📈 Взаимные связи показателей (нажми для графика)",
-      cls: "mca-sec-title",
-    });
-    const corrGrid = contentEl.createDiv({ cls: "mca-cards-grid" });
 
     if (report.topCorrelations.length === 0) {
-      corrGrid.createDiv({
+      island.createDiv({
         cls: "mca-empty",
-        text: `Недостаточно данных для надёжной связи (нужно n ≥ ${MIN_PAIR_SAMPLE} парных дней и |r| ≥ ${MIN_SIGNIFICANT_R}). Переключи период на «90 дней» или «Все время».`,
+        text: `Нет значимых связей (нужно n ≥ ${MIN_PAIR_SAMPLE}, |r| ≥ ${MIN_SIGNIFICANT_R}). Выберите «90 дн.» или «Всё».`,
       });
-    } else {
-      const visibleCorrelations = this.showAllCorrelations
-        ? report.topCorrelations
-        : report.topCorrelations.slice(0, DEFAULT_VISIBLE_CORRELATIONS);
+      return;
+    }
 
-      visibleCorrelations.forEach((item) => {
-        const isExpanded = this.expandedCorrelationId === item.id;
-        const isLag = (item.lagDays ?? 0) > 0;
-        const card = corrGrid.createDiv({
-          cls: `mca-card is-interactive ${isLag ? "is-lag-card" : ""} ${
-            isExpanded ? "is-expanded" : ""
-          }`,
-        });
+    const list = island.createDiv({ cls: "mca-corr-list" });
+    const visible = this.showAllCorrelations
+      ? report.topCorrelations
+      : report.topCorrelations.slice(0, DEFAULT_VISIBLE_CORRELATIONS);
 
-        const topRow = card.createDiv({ cls: "mca-card-top" });
-        const isSocial =
-          isSocialMetric(item.metricA) || isSocialMetric(item.metricB);
-        topRow.createSpan({
-          cls: "mca-card-label",
-          text: `${isSocial ? "📱 " : ""}${item.label}`,
-        });
-
-        const badgeText =
-          item.valueBadge ?? `${item.r > 0 ? "+" : ""}${item.r.toFixed(2)}`;
-        const isPositive = item.isPositive ?? item.r > 0;
-        topRow.createSpan({
-          cls: `mca-delta-badge ${isPositive ? "is-up" : "is-down"}`,
-          text: badgeText,
-        });
-
-        card.createDiv({
-          cls: "mca-card-desc",
-          text: `${item.interpretation} · ${
-            isExpanded ? "свернуть ▲" : "график ▾"
-          }`,
-        });
-
-        card.onclick = () => {
-          this.expandedCorrelationId = isExpanded ? null : item.id;
-          this.renderModal();
-        };
-
-        if (isExpanded) {
-          const plotHost = card.createDiv({ cls: "mca-plot-host" });
-          plotHost.onclick = (e) => e.stopPropagation();
-          const svg = renderScatterPlotSvg(
-            item.points,
-            item.metricA,
-            item.metricB,
-            item.r
-          );
-          plotHost.appendChild(svg);
-        }
+    visible.forEach((item) => {
+      const isExpanded = this.expandedCorrelationId === item.id;
+      const isLag = (item.lagDays ?? 0) > 0;
+      const card = list.createDiv({
+        cls: `mca-corr-card ${isLag ? "is-lag" : ""} ${
+          isExpanded ? "is-expanded" : ""
+        }`,
       });
 
-      if (report.topCorrelations.length > DEFAULT_VISIBLE_CORRELATIONS) {
-        const hiddenCount =
-          report.topCorrelations.length - DEFAULT_VISIBLE_CORRELATIONS;
-        const moreWrap = contentEl.createDiv({ cls: "mca-more-wrap" });
-        const moreBtn = moreWrap.createEl("button", {
-          cls: "mca-more-btn",
-          text: this.showAllCorrelations
-            ? "Свернуть дополнительные связи ▲"
-            : `Показать ещё (${hiddenCount}) ▾`,
-          attr: { type: "button" },
-        });
-        moreBtn.onclick = () => {
-          this.showAllCorrelations = !this.showAllCorrelations;
-          this.renderModal();
-        };
+      const row = card.createDiv({ cls: "mca-corr-row" });
+      row.createSpan({ cls: "mca-row-label", text: item.label });
+
+      const right = row.createDiv({ cls: "mca-row-right" });
+      const metaParts: string[] = [];
+      if (item.strengthLabel) metaParts.push(item.strengthLabel);
+      metaParts.push(`n=${item.sampleCount}`);
+      right.createSpan({
+        cls: "mca-row-meta",
+        text: metaParts.join(" · "),
+      });
+
+      const badgeText =
+        item.valueBadge ?? `${item.r > 0 ? "+" : ""}${item.r.toFixed(2)}`;
+      const isPositive = item.isPositive ?? item.r > 0;
+      right.createSpan({
+        cls: `mca-badge ${isPositive ? "is-up" : "is-down"}`,
+        text: badgeText,
+      });
+
+      right.createSpan({
+        cls: "mca-chevron",
+        text: "▸",
+        attr: { "aria-hidden": "true" },
+      });
+
+      card.onclick = () => {
+        this.expandedCorrelationId = isExpanded ? null : item.id;
+        this.renderModal();
+      };
+
+      if (isExpanded) {
+        const plotHost = card.createDiv({ cls: "mca-plot-host" });
+        plotHost.onclick = (e) => e.stopPropagation();
+        const svg = renderScatterPlotSvg(
+          item.points,
+          item.metricA,
+          item.metricB,
+          item.r
+        );
+        plotHost.appendChild(svg);
       }
+    });
+
+    if (report.topCorrelations.length > DEFAULT_VISIBLE_CORRELATIONS) {
+      const hidden =
+        report.topCorrelations.length - DEFAULT_VISIBLE_CORRELATIONS;
+      const moreBtn = island.createEl("button", {
+        cls: "mca-ghost-btn",
+        text: this.showAllCorrelations ? "Свернуть" : `Показать ещё ${hidden}`,
+        attr: { type: "button" },
+      });
+      moreBtn.onclick = () => {
+        this.showAllCorrelations = !this.showAllCorrelations;
+        this.renderModal();
+      };
+    }
+  }
+
+  private renderHabitsSection(
+    container: HTMLElement,
+    report: AnalyticsReport
+  ): void {
+    const island = container.createDiv({ cls: "mca-island" });
+    const secHead = island.createDiv({ cls: "mca-sec-head" });
+    secHead.createSpan({ cls: "mca-sec-title", text: "Привычки → День" });
+    if (report.topHabitImpacts.length > 0) {
+      secHead.createSpan({ cls: "mca-sec-hint", text: "с / без" });
+    }
+
+    if (report.topHabitImpacts.length === 0) {
+      island.createDiv({
+        cls: "mca-empty",
+        text: "Недостаточно данных по привычкам за период.",
+      });
+      return;
+    }
+
+    const list = island.createDiv({ cls: "mca-rows-list" });
+    const visible = this.showAllHabits
+      ? report.topHabitImpacts
+      : report.topHabitImpacts.slice(0, DEFAULT_VISIBLE_HABITS);
+
+    visible.forEach((item) => {
+      const row = list.createDiv({
+        cls: "mca-list-row",
+        attr: {
+          title: `С привычкой: ${item.avgWhenTrue.toFixed(1)} (${item.countTrue} дн.) · Без: ${item.avgWhenFalse.toFixed(1)} (${item.countFalse} дн.)`,
+        },
+      });
+
+      row.createSpan({
+        cls: "mca-row-label",
+        text: `${item.habitName} → ${
+          item.targetMetric === "score" ? "Оценка" : "Энергия"
+        }`,
+      });
+
+      const right = row.createDiv({ cls: "mca-row-right" });
+      right.createSpan({
+        cls: "mca-row-meta",
+        text: `${item.avgWhenTrue.toFixed(1)} / ${item.avgWhenFalse.toFixed(1)}`,
+      });
+
+      const isUp = item.delta > 0;
+      right.createSpan({
+        cls: `mca-badge ${isUp ? "is-up" : "is-down"}`,
+        text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}`,
+      });
+    });
+
+    if (report.topHabitImpacts.length > DEFAULT_VISIBLE_HABITS) {
+      const hidden = report.topHabitImpacts.length - DEFAULT_VISIBLE_HABITS;
+      const moreBtn = island.createEl("button", {
+        cls: "mca-ghost-btn",
+        text: this.showAllHabits ? "Свернуть" : `Показать ещё ${hidden}`,
+        attr: { type: "button" },
+      });
+      moreBtn.onclick = () => {
+        this.showAllHabits = !this.showAllHabits;
+        this.renderModal();
+      };
+    }
+  }
+
+  private renderLagSection(
+    container: HTMLElement,
+    report: AnalyticsReport
+  ): void {
+    const island = container.createDiv({ cls: "mca-island is-lag-island" });
+    const secHead = island.createDiv({ cls: "mca-sec-head" });
+    secHead.createSpan({ cls: "mca-sec-title", text: "Эффект на завтра" });
+    secHead.createSpan({ cls: "mca-sec-hint", text: "с / без" });
+
+    const list = island.createDiv({ cls: "mca-rows-list" });
+    report.lagImpacts.forEach((lag) => {
+      const means = extractPairMeans(lag.description);
+      const row = list.createDiv({
+        cls: "mca-list-row",
+        attr: { title: `n = ${lag.sampleCount} парных дней` },
+      });
+
+      row.createSpan({
+        cls: "mca-row-label",
+        text: `${cleanLagPart(lag.factorLabel)} → ${cleanLagPart(lag.targetLabel)}`,
+      });
+
+      const right = row.createDiv({ cls: "mca-row-right" });
+      if (means) {
+        right.createSpan({ cls: "mca-row-meta", text: means });
+      }
+      right.createSpan({
+        cls: `mca-badge ${lag.isPositive ? "is-up" : "is-down"}`,
+        text: lag.deltaOrR,
+      });
+    });
+  }
+
+  private renderSocialSection(
+    container: HTMLElement,
+    report: AnalyticsReport
+  ): void {
+    const island = container.createDiv({ cls: "mca-island" });
+    const secHead = island.createDiv({ cls: "mca-sec-head" });
+    secHead.createSpan({ cls: "mca-sec-title", text: "Соцсети" });
+    secHead.createSpan({
+      cls: "mca-sec-hint",
+      text: `лимит ≤ ${SOCIAL_LIMIT_MIN} мин`,
+    });
+
+    const s = report.socialStats;
+    if (s.daysTracked > 0) {
+      const kpiGrid = island.createDiv({ cls: "mca-kpi-grid" });
+
+      const addKpi = (label: string, val: string, sub?: string) => {
+        const cell = kpiGrid.createDiv({ cls: "mca-kpi-cell" });
+        cell.createDiv({ cls: "mca-kpi-label", text: label });
+        const valRow = cell.createDiv({ cls: "mca-kpi-val-row" });
+        valRow.createSpan({ cls: "mca-kpi-val", text: val });
+        if (sub) {
+          valRow.createSpan({ cls: "mca-kpi-sub", text: sub });
+        }
+      };
+
+      addKpi(
+        "Среднее",
+        s.avgSocialMinutes !== null
+          ? `${Math.round(s.avgSocialMinutes)} мин`
+          : "—"
+      );
+      addKpi(
+        "В лимите",
+        `${s.percentWithinLimit}%`,
+        `${s.daysWithinLimit}/${s.daysTracked}`
+      );
+      addKpi(
+        "Максимум",
+        s.maxSocialMinutes !== null ? `${s.maxSocialMinutes} мин` : "—"
+      );
+    }
+
+    if (report.socialLimitInsights.length > 0) {
+      const list = island.createDiv({ cls: "mca-rows-list mca-social-rows" });
+      report.socialLimitInsights.forEach((item) => {
+        const row = list.createDiv({
+          cls: "mca-list-row",
+          attr: {
+            title: `В лимите: ${item.avgUnderLimit.toFixed(1)} (${item.daysUnder} дн.) · Выше: ${item.avgOverLimit.toFixed(1)} (${item.daysOver} дн.)`,
+          },
+        });
+
+        row.createSpan({
+          cls: "mca-row-label",
+          text: `В лимите → ${item.metric === "score" ? "Оценка" : "Энергия"}`,
+        });
+
+        const right = row.createDiv({ cls: "mca-row-right" });
+        right.createSpan({
+          cls: "mca-row-meta",
+          text: `${item.avgUnderLimit.toFixed(1)} / ${item.avgOverLimit.toFixed(1)}`,
+        });
+
+        const isUp = item.delta > 0;
+        right.createSpan({
+          cls: `mca-badge ${isUp ? "is-up" : "is-down"}`,
+          text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}`,
+        });
+      });
     }
   }
 
@@ -323,7 +416,7 @@ export class CorrelationReportModal extends Modal {
     const isOpen = this.recordDetailsOpen;
 
     const section = container.createDiv({
-      cls: `mca-pr-details ${isOpen ? "is-open" : ""}`,
+      cls: `mca-island mca-pr-details ${isOpen ? "is-open" : ""}`,
     });
 
     const headerBtn = section.createEl("button", {
@@ -334,15 +427,20 @@ export class CorrelationReportModal extends Modal {
       },
     });
 
-    const titleWrap = headerBtn.createDiv({ cls: "mca-pr-summary-left" });
-    titleWrap.createSpan({
-      cls: "mca-pr-chevron",
+    const left = headerBtn.createDiv({ cls: "mca-pr-summary-left" });
+    left.createSpan({
+      cls: "mca-chevron",
       text: "▸",
       attr: { "aria-hidden": "true" },
     });
-    titleWrap.createSpan({
-      cls: "mca-pr-summary-title",
-      text: "🏆 Дни рекордов в тренировках против остальных дней",
+    left.createSpan({
+      cls: "mca-sec-title",
+      text: "Дни рекордов",
+    });
+
+    headerBtn.createSpan({
+      cls: "mca-sec-hint",
+      text: `${rec.totalRecordDaysInPeriod} из ${report.totalRecords} дн.`,
     });
 
     const collapseWrap = section.createDiv({
@@ -363,7 +461,7 @@ export class CorrelationReportModal extends Modal {
     if (rec.totalRecordDaysInPeriod === 0 || rec.rows.length === 0) {
       body.createDiv({
         cls: "mca-empty",
-        text: "За выбранный период дней с новыми рекордами не найдено. Переключи период на «90 дней» или «Все время».",
+        text: "Рекордов за период нет. Выберите «90 дн.» или «Всё».",
       });
       return;
     }
@@ -371,7 +469,7 @@ export class CorrelationReportModal extends Modal {
     if (rec.lowSampleOverall) {
       body.createDiv({
         cls: "mca-pr-warning",
-        text: `⚠️ Мало дней с рекордами за выбранный период (${rec.totalRecordDaysInPeriod} дн.). Таблица ниже показывает простое сравнение средних, но для уверенных выводов нужно хотя бы 3 дня рекордов.`,
+        text: `Мало рекордов (${rec.totalRecordDaysInPeriod} дн.) — средние ориентировочные.`,
       });
     }
 
@@ -380,21 +478,25 @@ export class CorrelationReportModal extends Modal {
     const thead = table.createEl("thead");
     const trH = thead.createEl("tr");
     trH.createEl("th", { text: "Показатель" });
-    trH.createEl("th", { text: "В дни рекордов" });
-    trH.createEl("th", { text: "В остальные дни" });
-    trH.createEl("th", { text: "Разница" });
-    trH.createEl("th", { text: "Число дней" });
+    trH.createEl("th", { text: "Рекорд" });
+    trH.createEl("th", { text: "Обычный" });
+    trH.createEl("th", { text: "Δ" });
 
     const tbody = table.createEl("tbody");
     for (const row of rec.rows) {
-      const tr = tbody.createEl("tr");
-
-      const tdName = tr.createEl("td", { cls: "mca-pr-td-name" });
-      tdName.createDiv({ cls: "mca-pr-metric-title", text: row.label });
-      tdName.createDiv({
-        cls: `mca-pr-metric-conclusion ${row.lowSample ? "is-low-sample" : ""}`,
-        text: row.conclusion,
+      const tr = tbody.createEl("tr", {
+        cls: row.lowSample ? "is-low-sample" : "",
+        attr: {
+          title: `Дней: ${row.countRecordDays} рек. / ${row.countOtherDays} об.`,
+        },
       });
+
+      const cleanName = row.label.replace(/^Привычка:\s*/i, "");
+      const tdName = tr.createEl("td", { cls: "mca-pr-td-name" });
+      tdName.createSpan({ text: cleanName });
+      if (row.lowSample) {
+        tdName.createSpan({ cls: "mca-low-tag", text: "мало" });
+      }
 
       const fmtVal = (val: number | null) => {
         if (val === null) return "—";
@@ -425,18 +527,11 @@ export class CorrelationReportModal extends Modal {
               : row.delta < 0;
         tdDelta.createSpan({
           cls:
-            "mca-delta-badge" +
+            "mca-badge" +
             (isGood === true ? " is-up" : isGood === false ? " is-down" : ""),
           text: `${sign}${r2(row.delta).toLocaleString("ru-RU")}${unitSuffix}`,
         });
       }
-
-      const tdSample = tr.createEl("td", { cls: "mca-pr-td-sample" });
-      tdSample.setText(
-        `${row.countRecordDays} и ${row.countOtherDays} дн.${
-          row.lowSample ? " ⚠️ мало" : ""
-        }`
-      );
     }
   }
 

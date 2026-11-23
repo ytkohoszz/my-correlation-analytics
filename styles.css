@@ -1,389 +1,637 @@
-/* styles.css */
-.modal.mod-correlation-report {
-  width: 92vw !important;
-  max-width: 740px !important;
-  max-height: 88vh !important;
-  padding: 18px 22px !important;
-  border-radius: 12px !important;
-  background: var(--background-secondary) !important;
-  border: 1px solid var(--background-modifier-border) !important;
-  overflow-y: auto !important;
-}
+/* ==========================================================================
+   my-correlation-analytics — Velocity 2.1.0 Island UI
+   ========================================================================== */
 
-.mca-head {
+.modal.mod-correlation-report {
+  width: min(92vw, 660px);
+  max-width: 660px;
+  max-height: 86vh;
+  padding: 0;
+  border: none;
+  border-radius: var(--modal-radius, var(--radius-l, 18px));
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  background: var(--modal-background, var(--background-primary));
+  font-family: var(--font-interface);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.mca-title-row {
+.modal.mod-correlation-report .modal-content {
+  padding: 20px 22px 24px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.modal.mod-correlation-report .modal-content::-webkit-scrollbar {
+  display: none;
+}
+
+.mod-correlation-report .mca-root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Шапка и сегментный переключатель ───────────────────────────────────── */
+
+.mod-correlation-report .mca-head {
+  padding-bottom: 4px;
+}
+
+.mod-correlation-report .mca-head-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.mca-title-row h2 {
-  margin: 0 !important;
-  font-size: 1.15rem;
-}
-
-.mca-tabs-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-.mca-tab-btn {
-  min-height: 32px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-primary);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.14s ease;
-}
-
-.mca-tab-btn:hover {
-  border-color: var(--interactive-accent);
-  color: var(--text-normal);
-}
-
-.mca-tab-btn.is-active {
-  background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-primary));
-  border-color: var(--interactive-accent);
-  color: var(--text-normal);
-  font-weight: 700;
-}
-
-.mca-sub {
-  font-size: 0.76rem;
-  color: var(--text-muted);
-}
-
-.mca-sec-title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--text-normal);
-  margin: 14px 0 8px 0 !important;
-}
-
-.mca-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.mca-card {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
+.mod-correlation-report .mca-title-wrap {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  gap: 2px;
 }
 
-.mca-card.is-interactive {
-  cursor: pointer;
-  user-select: none;
+.mod-correlation-report .mca-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: var(--font-semibold, 600);
+  font-variation-settings: "opsz" 26;
+  color: var(--color-base-100, var(--text-normal));
+  line-height: 1.25;
 }
 
-.mca-card.is-interactive:hover {
-  border-color: var(--interactive-accent);
+.mod-correlation-report .mca-meta-line {
+  font-size: 0.76rem;
+  color: var(--icon-color, var(--text-muted));
+  font-variant-numeric: tabular-nums;
 }
 
-.mca-card.is-expanded {
-  border-color: var(--interactive-accent);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-}
-
-.mca-card-top {
-  display: flex;
+.mod-correlation-report .mca-seg-track {
+  display: inline-flex;
   align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-xl, 20px);
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  background: var(--tab-sidebar-container-bg, var(--background-primary));
+  box-shadow: inset 0 0 0 0.5px var(--trans-faint-20, var(--background-modifier-border));
+}
+
+.mod-correlation-report button.mca-seg-btn {
+  appearance: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  contain: content;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-xxl, 22px);
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  background: transparent;
+  color: var(--icon-color, var(--text-muted));
+  font-family: var(--font-interface);
+  font-size: 0.76rem;
+  font-weight: var(--font-semi-medium, 500);
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
+  cursor: pointer;
+  transition:
+    background var(--anim-super-smooth, 75ms ease-out),
+    color var(--anim-super-smooth, 75ms ease-out),
+    box-shadow var(--anim-duration-fast, 150ms);
+}
+
+.mod-correlation-report button.mca-seg-btn:hover {
+  color: var(--text-normal);
+}
+
+.mod-correlation-report button.mca-seg-btn:active {
+  filter: opacity(65%);
+}
+
+.mod-correlation-report button.mca-seg-btn.is-active {
+  background: var(--tab-sidebar-bg, var(--background-secondary));
+  color: var(--color-base-100, var(--text-normal));
+  font-weight: var(--font-semibold, 600);
+  box-shadow: var(--shadow-tab, var(--shadow-s));
+}
+
+/* ── Уровень 1: Островки-секции ─────────────────────────────────────────── */
+
+.mod-correlation-report .mca-island {
+  padding: 14px 16px;
+  border: none;
+  border-radius: calc(var(--radius-ml, 14px) + 2px);
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  background: var(--trans-faint-05, var(--background-secondary));
+  box-shadow:
+    var(--glass-base-m, none),
+    0 0 0 0.5px var(--trans-faint-25, var(--background-modifier-border)),
+    var(--shadow-setting-items, none);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mod-correlation-report .mca-island.is-lag-island {
+  box-shadow:
+    var(--glass-base-m, none),
+    0 0 0 0.5px var(--trans-faint-25, var(--background-modifier-border)),
+    inset 2.5px 0 0 0 color-mix(in oklab, var(--color-blue, #599ed6) 75%, transparent),
+    var(--shadow-setting-items, none);
+}
+
+.mod-correlation-report .mca-sec-head {
+  display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 
-.mca-card-label {
-  font-size: 0.82rem;
-  font-weight: 650;
-  color: var(--text-normal);
+.mod-correlation-report .mca-sec-title {
+  font-size: 0.86rem;
+  font-weight: var(--font-semibold, 600);
+  font-variation-settings: "opsz" 24;
+  color: var(--color-base-100, var(--text-normal));
 }
 
-.mca-delta-badge {
+.mod-correlation-report .mca-sec-hint {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.mod-correlation-report .mca-empty {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  padding: 6px 2px;
+}
+
+/* ── Ключевые связи (Уровень 2, раскрываемые карточки) ──────────────────── */
+
+.mod-correlation-report .mca-corr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mod-correlation-report .mca-corr-card {
+  padding: 9px 12px;
+  border: none;
+  border-radius: var(--radius-sm, 10px);
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-input, 0 0 0 0.5px var(--trans-faint-20, var(--background-modifier-border)));
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--anim-super-smooth, 75ms ease-out),
+    box-shadow var(--anim-duration-fast, 150ms);
+}
+
+.mod-correlation-report .mca-corr-card.is-lag {
+  box-shadow:
+    var(--shadow-input, 0 0 0 0.5px var(--trans-faint-20, var(--background-modifier-border))),
+    inset 2.5px 0 0 0 color-mix(in oklab, var(--color-blue, #599ed6) 85%, transparent);
+}
+
+.mod-correlation-report .mca-corr-card:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mod-correlation-report .mca-corr-card.is-expanded {
+  background: var(--background-primary);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--interactive-accent) 55%, transparent),
+    var(--shadow-s, none);
+}
+
+.mod-correlation-report .mca-corr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ── Компактные строки (Привычки / Завтра / Соцсети) ────────────────────── */
+
+.mod-correlation-report .mca-rows-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.mod-correlation-report .mca-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--trans-faint-20, var(--background-modifier-border));
+}
+
+.mod-correlation-report .mca-list-row:first-child {
+  padding-top: 2px;
+}
+
+.mod-correlation-report .mca-list-row:last-child {
+  padding-bottom: 2px;
+  border-bottom: none;
+}
+
+.mod-correlation-report .mca-row-label {
+  font-size: 0.82rem;
+  font-weight: var(--font-semi-medium, 500);
+  color: var(--text-normal);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mod-correlation-report .mca-row-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.mod-correlation-report .mca-row-meta {
   font-size: 0.74rem;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  color: var(--text-muted);
+  color: var(--icon-color, var(--text-muted));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.mca-delta-badge.is-up {
-  color: #4aab80;
-  background: rgba(74, 171, 128, 0.12);
-  border-color: rgba(74, 171, 128, 0.4);
-}
+/* ── Семантические бейджи ───────────────────────────────────────────────── */
 
-.mca-delta-badge.is-down {
-  color: #d85b57;
-  background: rgba(216, 91, 87, 0.12);
-  border-color: rgba(216, 91, 87, 0.4);
-}
-
-.mca-card-desc {
-  font-size: 0.74rem;
-  line-height: 1.32;
-  color: var(--text-muted);
-}
-
-.mca-empty {
-  font-size: 0.78rem;
-  color: var(--text-faint);
-  padding: 8px;
-}
-
-.mca-more-wrap {
-  display: flex;
+.mod-correlation-report .mca-badge {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  margin: 4px 0 12px 0;
+  min-width: 48px;
+  padding: 3px 8px;
+  border-radius: var(--pill-radius, var(--radius-l, 18px));
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  font-size: 0.74rem;
+  font-weight: var(--font-bold, 700);
+  font-variant-numeric: tabular-nums;
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
+  white-space: nowrap;
+  color: var(--icon-color, var(--text-muted));
+  background: var(--trans-faint-10, var(--background-secondary));
+  box-shadow: inset 0 0 0 0.5px var(--trans-faint-25, var(--background-modifier-border));
 }
 
-.mca-more-btn {
-  min-height: 30px;
-  padding: 4px 14px;
-  border-radius: 8px;
+.mod-correlation-report .mca-badge.is-up {
+  color: var(--color-green, #4aab80);
+  background: color-mix(in oklab, var(--color-green, #4aab80) 14%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, var(--color-green, #4aab80) 35%, transparent);
+}
+
+.mod-correlation-report .mca-badge.is-down {
+  color: var(--color-red, #d85b57);
+  background: color-mix(in oklab, var(--color-red, #d85b57) 14%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, var(--color-red, #d85b57) 35%, transparent);
+}
+
+.mod-correlation-report .mca-chevron {
+  display: inline-block;
   font-size: 0.76rem;
-  font-weight: 600;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-primary);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: border-color 0.14s ease, color 0.14s ease;
+  color: var(--text-faint);
+  transition:
+    transform var(--anim-duration-fast, 150ms) var(--vl-ease-out, cubic-bezier(0.3, 0.75, 0, 1)),
+    color var(--anim-super-smooth, 75ms ease-out);
 }
 
-.mca-more-btn:hover {
-  border-color: var(--interactive-accent);
+.mod-correlation-report .mca-corr-card.is-expanded .mca-chevron,
+.mod-correlation-report .mca-pr-details.is-open .mca-chevron {
+  transform: rotate(90deg);
   color: var(--text-normal);
 }
 
-.mca-plot-host {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--background-modifier-border);
+/* ── Кнопка «Показать ещё» ──────────────────────────────────────────────── */
+
+.mod-correlation-report button.mca-ghost-btn {
+  appearance: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  contain: content;
+  align-self: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-s, 8px);
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  background: var(--interactive-normal);
+  color: var(--icon-color, var(--text-muted));
+  font-family: var(--font-interface);
+  font-size: 0.74rem;
+  font-weight: var(--font-semi-medium, 500);
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
+  cursor: pointer;
+  transition:
+    background var(--anim-super-smooth, 75ms ease-out),
+    color var(--anim-super-smooth, 75ms ease-out);
+}
+
+.mod-correlation-report button.mca-ghost-btn:hover {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+.mod-correlation-report button.mca-ghost-btn:active {
+  filter: opacity(65%);
+}
+
+/* ── График рассеяния ───────────────────────────────────────────────────── */
+
+.mod-correlation-report .mca-plot-host {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--trans-faint-20, var(--background-modifier-border));
   cursor: default;
 }
 
-.mca-scatter-svg {
+.mod-correlation-report .mca-scatter-svg {
   display: block;
   user-select: none;
-  background: var(--background-secondary);
-  border-radius: 6px;
-  border: 1px solid var(--background-modifier-border);
+  background: var(--trans-faint-05, var(--background-secondary));
+  border-radius: var(--radius-s, 8px);
+  box-shadow: inset 0 0 0 0.5px var(--trans-faint-20, var(--background-modifier-border));
 }
 
-.mca-axis {
-  stroke: var(--background-modifier-border);
-  stroke-width: 1.2;
+.mod-correlation-report .mca-axis {
+  stroke: var(--trans-faint-30, var(--background-modifier-border));
+  stroke-width: 1;
   fill: none;
 }
 
-.mca-trend-line {
+.mod-correlation-report .mca-trend-line {
   stroke-width: 2;
   stroke-dasharray: 4 3;
 }
 
-.mca-scatter-dot {
+.mod-correlation-report .mca-trend-line.is-up {
+  stroke: var(--color-green, #4aab80);
+}
+
+.mod-correlation-report .mca-trend-line.is-down {
+  stroke: var(--color-red, #d85b57);
+}
+
+.mod-correlation-report .mca-scatter-dot {
   fill: var(--interactive-accent);
   stroke: var(--background-primary);
   stroke-width: 1;
   opacity: 0.85;
 }
 
-.mca-axis-label {
+.mod-correlation-report .mca-axis-label {
   font-size: 9px;
-  fill: var(--text-muted);
+  fill: var(--icon-color, var(--text-muted));
   font-family: var(--font-interface);
 }
 
-.mca-axis-x {
+.mod-correlation-report .mca-axis-x {
   text-anchor: end;
 }
 
-.mca-axis-y {
+.mod-correlation-report .mca-axis-y {
   text-anchor: start;
 }
 
-.mca-card.is-lag-card {
-  border-left: 3px solid #599ed6;
+/* ── Блок соцсетей (KPI-сетка Уровня 2) ─────────────────────────────────── */
+
+.mod-correlation-report .mca-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
-/* ============================================================
-   СВОРАЧИВАЕМЫЙ БЛОК «ДНИ РЕКОРДОВ ПРОТИВ ОСТАЛЬНЫХ ДНЕЙ»
-   ============================================================ */
-
-.mca-pr-details {
-  padding: 10px 14px;
-  border-radius: 10px;
+.mod-correlation-report .mca-kpi-cell {
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--radius-sm, 10px);
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
   background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-top: 3px solid #e5a158;
-  margin-bottom: 14px;
+  box-shadow: var(--shadow-input, 0 0 0 0.5px var(--trans-faint-20, var(--background-modifier-border)));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.mca-pr-summary {
+.mod-correlation-report .mca-kpi-label {
+  font-size: 0.7rem;
+  color: var(--icon-color, var(--text-muted));
+}
+
+.mod-correlation-report .mca-kpi-val-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.mod-correlation-report .mca-kpi-val {
+  font-size: 0.96rem;
+  font-weight: var(--font-bold, 700);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-base-100, var(--text-normal));
+}
+
+.mod-correlation-report .mca-kpi-sub {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.mod-correlation-report .mca-social-rows {
+  margin-top: 2px;
+}
+
+/* ── Сворачиваемый блок «Дни рекордов» + Таблица Velocity ───────────────── */
+
+.mod-correlation-report .mca-pr-details {
+  gap: 0;
+  box-shadow:
+    var(--glass-base-m, none),
+    0 0 0 0.5px var(--trans-faint-25, var(--background-modifier-border)),
+    inset 0 2px 0 0 color-mix(in oklab, var(--color-orange, #e5a158) 70%, transparent),
+    var(--shadow-setting-items, none);
+}
+
+.mod-correlation-report button.mca-pr-summary {
+  appearance: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  contain: content;
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 8px;
   padding: 2px 0;
   margin: 0;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
+  background: transparent;
   cursor: pointer;
   user-select: none;
   text-align: left;
+  font-family: var(--font-interface);
 }
 
-.mca-pr-summary:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: 6px;
+.mod-correlation-report button.mca-pr-summary:focus-visible {
+  box-shadow: var(--shadow-input-active, 0 0 0 2.5px var(--interactive-accent));
+  border-radius: var(--radius-xs, 6px);
 }
 
-.mca-pr-summary-left {
+.mod-correlation-report .mca-pr-summary-left {
   display: flex;
   align-items: center;
   gap: 7px;
 }
 
-.mca-pr-chevron {
-  display: inline-block;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  transition: transform 0.2s ease;
-}
-
-.mca-pr-details.is-open .mca-pr-chevron {
-  transform: rotate(90deg);
-  color: var(--text-normal);
-}
-
-.mca-pr-summary-title {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text-normal);
-}
-
-.mca-pr-collapse {
+.mod-correlation-report .mca-pr-collapse {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 0.22s ease;
+  transition: grid-template-rows 180ms var(--vl-ease-out, cubic-bezier(0.3, 0.75, 0, 1));
 }
 
-.mca-pr-collapse.is-open {
+.mod-correlation-report .mca-pr-collapse.is-open {
   grid-template-rows: 1fr;
 }
 
-.mca-pr-collapse-inner {
+.mod-correlation-report .mca-pr-collapse-inner {
   overflow: hidden;
   min-height: 0;
 }
 
-.mca-pr-body {
+.mod-correlation-report .mca-pr-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: 1px solid var(--trans-faint-20, var(--background-modifier-border));
 }
 
-.mca-pr-warning {
-  font-size: 0.75rem;
+.mod-correlation-report .mca-pr-warning {
+  font-size: 0.74rem;
   line-height: 1.35;
   padding: 8px 10px;
-  border-radius: 7px;
-  background: rgba(229, 161, 88, 0.12);
-  border: 1px solid rgba(229, 161, 88, 0.4);
-  color: #e5a158;
+  border: none;
+  border-radius: var(--radius-s, 8px);
+  -electron-corner-smoothing: var(--corner-smoothing, 60%);
+  background: color-mix(in oklab, var(--color-orange, #e5a158) 12%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, var(--color-orange, #e5a158) 35%, transparent);
+  color: var(--color-orange, #e5a158);
 }
 
-.mca-pr-table-wrap {
+.mod-correlation-report .mca-pr-table-wrap {
   width: 100%;
   overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.mca-pr-table {
+.mod-correlation-report .mca-pr-table-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.mod-correlation-report .mca-pr-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }
 
-.mca-pr-table th {
+.mod-correlation-report .mca-pr-table thead th {
   text-align: left;
-  padding: 6px 8px;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: var(--font-semi-medium, 500);
+  color: var(--table-header-color, var(--icon-color, var(--text-muted)));
+  border: none;
+  border-bottom: 2px solid var(--table-header-border-color, var(--hr-color, var(--background-modifier-border)));
   white-space: nowrap;
 }
 
-.mca-pr-table td {
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
+.mod-correlation-report .mca-pr-table thead th:not(:first-child) {
+  text-align: right;
+}
+
+.mod-correlation-report .mca-pr-table tbody tr:nth-child(even) {
+  background: var(--table-row-bg, var(--trans-faint-05, transparent));
+}
+
+.mod-correlation-report .mca-pr-table tbody tr.is-low-sample td {
+  opacity: 0.72;
+}
+
+.mod-correlation-report .mca-pr-table tbody td {
+  padding: 7px 10px;
+  border: none;
   vertical-align: middle;
 }
 
-.mca-pr-td-name {
-  min-width: 190px;
+.mod-correlation-report .mca-pr-table tbody td:not(:first-child) {
+  border-left: 1px solid var(--table-border-color, var(--trans-faint-20, var(--background-modifier-border)));
+  text-align: right;
+  white-space: nowrap;
 }
 
-.mca-pr-metric-title {
-  font-weight: 650;
+.mod-correlation-report .mca-pr-td-name {
+  font-weight: var(--font-semi-medium, 500);
   color: var(--text-normal);
+  min-width: 140px;
 }
 
-.mca-pr-metric-conclusion {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  margin-top: 2px;
-  line-height: 1.25;
-}
-
-.mca-pr-metric-conclusion.is-low-sample {
+.mod-correlation-report .mca-low-tag {
+  margin-left: 6px;
+  font-size: 0.68rem;
+  font-weight: var(--font-semi-medium, 500);
   color: var(--text-faint);
 }
 
-.mca-pr-td-num {
+.mod-correlation-report .mca-pr-td-num {
   color: var(--text-normal);
-  white-space: nowrap;
 }
 
-.mca-pr-td-delta {
-  white-space: nowrap;
+/* ── Адаптация под iPadOS / Touch ───────────────────────────────────────── */
+
+body.is-mobile .modal.mod-correlation-report .modal-content,
+body.is-tablet .modal.mod-correlation-report .modal-content {
+  padding: calc(16px + var(--safe-area-inset-top, 0px)) 16px calc(20px + var(--safe-area-inset-bottom, 0px));
 }
 
-.mca-pr-td-sample {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  white-space: nowrap;
+body.is-mobile .mod-correlation-report button.mca-seg-btn,
+body.is-tablet .mod-correlation-report button.mca-seg-btn {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 0.82rem;
+}
+
+body.is-mobile .mod-correlation-report button.mca-ghost-btn,
+body.is-tablet .mod-correlation-report button.mca-ghost-btn {
+  min-height: 38px;
+  height: 38px;
+  padding: 0 16px;
+  font-size: 0.82rem;
+}
+
+body.is-mobile .mod-correlation-report .mca-corr-card,
+body.is-tablet .mod-correlation-report .mca-corr-card {
+  padding: 12px 14px;
+}
+
+body.is-mobile .mod-correlation-report button.mca-pr-summary,
+body.is-tablet .mod-correlation-report button.mca-pr-summary {
+  min-height: 36px;
+}
+
+body.is-mobile .mod-correlation-report .mca-kpi-grid {
+  grid-template-columns: 1fr;
 }
