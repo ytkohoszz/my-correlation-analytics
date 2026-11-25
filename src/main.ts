@@ -1,5 +1,5 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
-import { collectDailyRecords } from "./data-collector";
+import { collectDailyRecords, readValuesCompassIndex } from "./data-collector";
 import { analyzeRecords } from "./engine";
 import { CorrelationReportModal } from "./report-modal";
 import {
@@ -18,6 +18,12 @@ function migrateSettings(raw: unknown): CorrelationAnalyticsSettings {
     raw && typeof raw === "object"
       ? (raw as Record<string, unknown>)
       : {};
+  const rawLimit = Number(s["socialLimitMin"]);
+  const socialLimitMin =
+    Number.isFinite(rawLimit) && rawLimit >= 0 && rawLimit <= 1440
+      ? Math.round(rawLimit)
+      : DEFAULT_SETTINGS.socialLimitMin;
+
   return {
     diaryFolder:
       typeof s["diaryFolder"] === "string" && s["diaryFolder"].trim()
@@ -27,6 +33,11 @@ function migrateSettings(raw: unknown): CorrelationAnalyticsSettings {
       typeof s["workoutsFolder"] === "string" && s["workoutsFolder"].trim()
         ? s["workoutsFolder"].trim()
         : DEFAULT_SETTINGS.workoutsFolder,
+    socialLimitMin,
+    valuesCompassPath:
+      typeof s["valuesCompassPath"] === "string" && s["valuesCompassPath"].trim()
+        ? s["valuesCompassPath"].trim()
+        : DEFAULT_SETTINGS.valuesCompassPath,
   };
 }
 
@@ -65,6 +76,37 @@ class CorrelationSettingTab extends PluginSettingTab {
           .onChange(async (val) => {
             this.plugin.settings.workoutsFolder =
               val.trim() || DEFAULT_SETTINGS.workoutsFolder;
+            await this.plugin.saveSettingsData();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Лимит соцсетей (мин/день)")
+      .setDesc("Порог для привычки «Без соцсетей» и сравнения дней в лимите / сверх лимита. По умолчанию: 30")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "0";
+        text.inputEl.max = "1440";
+        text
+          .setValue(String(this.plugin.settings.socialLimitMin))
+          .onChange(async (val) => {
+            const parsed = Number(val.trim());
+            if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1440) {
+              this.plugin.settings.socialLimitMin = Math.round(parsed);
+              await this.plugin.saveSettingsData();
+            }
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Файл данных «Ценностей»")
+      .setDesc("Путь к JSON-базе my-values-compass. По умолчанию: _system/values-compass.json")
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.valuesCompassPath)
+          .onChange(async (val) => {
+            this.plugin.settings.valuesCompassPath =
+              val.trim() || DEFAULT_SETTINGS.valuesCompassPath;
             await this.plugin.saveSettingsData();
           })
       );
@@ -132,24 +174,39 @@ export default class MyCorrelationAnalyticsPlugin extends Plugin {
   }
 
   public getRawRecords(): DailyRecord[] {
-    return collectDailyRecords(this.app, this.settings.diaryFolder);
+    return collectDailyRecords(this.app, this.settings.diaryFolder, {
+      socialLimitMin: this.settings.socialLimitMin,
+    });
+  }
+
+  public async getRawRecordsAsync(): Promise<DailyRecord[]> {
+    const valuesIndex = await readValuesCompassIndex(
+      this.app,
+      this.settings.valuesCompassPath
+    );
+    return collectDailyRecords(this.app, this.settings.diaryFolder, {
+      socialLimitMin: this.settings.socialLimitMin,
+      valuesIndex,
+    });
   }
 
   public async getReportAsync(days: number = 30): Promise<AnalyticsReport> {
-    const records = this.getRawRecords();
-    const scan = await detectWorkoutRecordDays(
-      this.app,
-      this.settings.workoutsFolder
-    );
+    const [records, scan] = await Promise.all([
+      this.getRawRecordsAsync(),
+      detectWorkoutRecordDays(this.app, this.settings.workoutsFolder),
+    ]);
     return analyzeRecords(records, days, {
       recordDatesSet: new Set(scan.recordDaySummariesByDate.keys()),
       workoutDatesSet: scan.workoutDatesSet,
+      socialLimitMin: this.settings.socialLimitMin,
     });
   }
 
   public getReport(days: number = 30): AnalyticsReport {
     const records = this.getRawRecords();
-    return analyzeRecords(records, days);
+    return analyzeRecords(records, days, {
+      socialLimitMin: this.settings.socialLimitMin,
+    });
   }
 
   public openAnalyticsReport(days: number = 30): void {

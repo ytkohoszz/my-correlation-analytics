@@ -1,9 +1,84 @@
 import { App, normalizePath } from "obsidian";
-import { DailyRecord } from "./types";
+import { DailyRecord, DEFAULT_SETTINGS } from "./types";
 
-const DEFAULT_DIARY_FOLDER = "Ежедневник";
-const SOCIAL_LIMIT_MIN = 30;
+const DEFAULT_DIARY_FOLDER = DEFAULT_SETTINGS.diaryFolder;
+const DEFAULT_SOCIAL_LIMIT_MIN = DEFAULT_SETTINGS.socialLimitMin;
+const DEFAULT_VALUES_COMPASS_PATH = DEFAULT_SETTINGS.valuesCompassPath;
 const MIN_VALID_DATE_ISO = "2000-01-01";
+
+export interface ValuesCompassDayData {
+  actionsCount: number;
+  hasSavoring: boolean;
+}
+
+export interface ValuesCompassDailyIndex {
+  minDateISO: string | null;
+  byDate: Map<string, ValuesCompassDayData>;
+}
+
+export interface CollectDailyRecordsOptions {
+  socialLimitMin?: number;
+  valuesIndex?: ValuesCompassDailyIndex | null;
+}
+
+function extractValidDateISO(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const m = raw.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!m || !m[1]) return null;
+  return m[1] >= MIN_VALID_DATE_ISO ? m[1] : null;
+}
+
+export async function readValuesCompassIndex(
+  app: App,
+  filePath: string = DEFAULT_VALUES_COMPASS_PATH
+): Promise<ValuesCompassDailyIndex> {
+  const byDate = new Map<string, ValuesCompassDayData>();
+  let minDateISO: string | null = null;
+
+  const normalized = normalizePath(filePath || DEFAULT_VALUES_COMPASS_PATH);
+  try {
+    const exists = await app.vault.adapter.exists(normalized);
+    if (!exists) return { minDateISO, byDate };
+
+    const rawText = await app.vault.adapter.read(normalized);
+    const parsed = JSON.parse(rawText) as {
+      logs?: Array<{ date?: unknown }>;
+      savoring?: Array<{ date?: unknown }>;
+    };
+
+    const touchDate = (dateISO: string): ValuesCompassDayData => {
+      if (minDateISO === null || dateISO < minDateISO) {
+        minDateISO = dateISO;
+      }
+      let entry = byDate.get(dateISO);
+      if (!entry) {
+        entry = { actionsCount: 0, hasSavoring: false };
+        byDate.set(dateISO, entry);
+      }
+      return entry;
+    };
+
+    if (Array.isArray(parsed?.logs)) {
+      for (const item of parsed.logs) {
+        const d = extractValidDateISO(item?.date);
+        if (!d) continue;
+        touchDate(d).actionsCount += 1;
+      }
+    }
+
+    if (Array.isArray(parsed?.savoring)) {
+      for (const item of parsed.savoring) {
+        const d = extractValidDateISO(item?.date);
+        if (!d) continue;
+        touchDate(d).hasSavoring = true;
+      }
+    }
+  } catch (err) {
+    console.warn("[my-correlation-analytics] Не удалось прочитать values-compass.json:", err);
+  }
+
+  return { minDateISO, byDate };
+}
 
 function todayLocalISO(): string {
   const now = new Date();
@@ -52,10 +127,18 @@ function parseSocialMinutes(v: unknown): number | null {
 
 export function collectDailyRecords(
   app: App,
-  diaryFolder: string = DEFAULT_DIARY_FOLDER
+  diaryFolder: string = DEFAULT_DIARY_FOLDER,
+  options: CollectDailyRecordsOptions = {}
 ): DailyRecord[] {
   const folderPrefix =
     normalizePath(diaryFolder || DEFAULT_DIARY_FOLDER).replace(/\/+$/, "") + "/";
+  const socialLimitMin =
+    typeof options.socialLimitMin === "number" &&
+    Number.isFinite(options.socialLimitMin) &&
+    options.socialLimitMin >= 0
+      ? options.socialLimitMin
+      : DEFAULT_SOCIAL_LIMIT_MIN;
+  const valuesIndex = options.valuesIndex ?? null;
   const maxDateISO = todayLocalISO();
 
   const files = app.vault
@@ -82,7 +165,19 @@ export function collectDailyRecords(
 
     let noSocials = parseBool(fm["без_соцсетей"]);
     if (noSocials === null && socialMinutes !== null) {
-      noSocials = socialMinutes <= SOCIAL_LIMIT_MIN;
+      noSocials = socialMinutes <= socialLimitMin;
+    }
+
+    let valuesActionsCount: number | null = null;
+    let hasSavoring: boolean | null = null;
+    if (
+      valuesIndex &&
+      valuesIndex.minDateISO !== null &&
+      dateISO >= valuesIndex.minDateISO
+    ) {
+      const vDay = valuesIndex.byDate.get(dateISO);
+      valuesActionsCount = vDay ? vDay.actionsCount : 0;
+      hasSavoring = vDay ? vDay.hasSavoring : false;
     }
 
     recordsMap.set(dateISO, {
@@ -102,6 +197,7 @@ export function collectDailyRecords(
         steps: parseNum(fm["шаги"], 0, 200000),
         focusHours: parseNum(fm["глубокая_работа_часов"], 0, 24),
         socialMinutes,
+        valuesActionsCount,
         bedtime: parseTimeStr(fm["отбой"]),
         wakeup: parseTimeStr(fm["подъём"]),
         habits: {
@@ -111,6 +207,7 @@ export function collectDailyRecords(
           режим_сна: parseBool(fm["режим_сна"]),
           диета: parseBool(fm["диета"]),
           без_соцсетей: noSocials,
+          момент_присутствия: hasSavoring,
         },
       },
     });

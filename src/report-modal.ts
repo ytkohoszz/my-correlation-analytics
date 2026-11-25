@@ -1,5 +1,5 @@
 // src/report-modal.ts
-import { App, Modal } from "obsidian";
+import { App, Modal, setIcon } from "obsidian";
 import { AnalyticsReport, DailyRecord } from "./types";
 import {
   analyzeRecords,
@@ -53,17 +53,18 @@ export class CorrelationReportModal extends Modal {
   async onOpen(): Promise<void> {
     const { modalEl } = this;
     modalEl.addClass("mod-correlation-report");
-    await this.reloadWorkoutHistory();
+    await this.reloadExternalData();
     this.renderModal();
   }
 
-  private async reloadWorkoutHistory(): Promise<void> {
-    const scan = await detectWorkoutRecordDays(
-      this.app,
-      this.plugin.settings.workoutsFolder
-    );
+  private async reloadExternalData(): Promise<void> {
+    const [scan, recordsWithValues] = await Promise.all([
+      detectWorkoutRecordDays(this.app, this.plugin.settings.workoutsFolder),
+      this.plugin.getRawRecordsAsync(),
+    ]);
     this.recordDatesSet = new Set(scan.recordDaySummariesByDate.keys());
     this.workoutDatesSet = scan.workoutDatesSet;
+    this.allRecords = recordsWithValues;
   }
 
   private renderModal(): void {
@@ -76,6 +77,7 @@ export class CorrelationReportModal extends Modal {
       {
         recordDatesSet: this.recordDatesSet,
         workoutDatesSet: this.workoutDatesSet,
+        socialLimitMin: this.plugin.settings.socialLimitMin,
       }
     );
 
@@ -131,7 +133,12 @@ export class CorrelationReportModal extends Modal {
       this.renderLagSection(root, report);
     }
 
-    // ── 4. Дни рекордов (сворачиваемый блок) ───────────────────────────────
+    // ── 4. Лимит соцсетей ──────────────────────────────────────────────────
+    if (report.socialLimitInsights.length > 0) {
+      this.renderSocialLimitSection(root, report);
+    }
+
+    // ── 5. Дни рекордов (сворачиваемый блок) ───────────────────────────────
     this.renderRecordDaysSection(root, report);
   }
 
@@ -188,11 +195,11 @@ export class CorrelationReportModal extends Modal {
         text: badgeText,
       });
 
-      right.createSpan({
+      const chevronEl = right.createSpan({
         cls: "mca-chevron",
-        text: "▸",
         attr: { "aria-hidden": "true" },
       });
+      setIcon(chevronEl, "chevron-right");
 
       card.onclick = () => {
         this.expandedCorrelationId = isExpanded ? null : item.id;
@@ -326,6 +333,62 @@ export class CorrelationReportModal extends Modal {
     });
   }
 
+  private renderSocialLimitSection(
+    container: HTMLElement,
+    report: AnalyticsReport
+  ): void {
+    const limitMin = this.plugin.settings.socialLimitMin;
+    const stats = report.socialStats;
+
+    const island = container.createDiv({ cls: "mca-island" });
+    const secHead = island.createDiv({ cls: "mca-sec-head" });
+    secHead.createSpan({
+      cls: "mca-sec-title",
+      text: `Лимит соцсетей ≤ ${limitMin} мин`,
+    });
+
+    const hintParts: string[] = [];
+    if (stats.avgSocialMinutes !== null) {
+      hintParts.push(`ср. ${Math.round(stats.avgSocialMinutes)} мин`);
+    }
+    if (stats.daysTracked > 0) {
+      hintParts.push(`${stats.percentWithinLimit}% в норме`);
+    }
+    if (hintParts.length > 0) {
+      secHead.createSpan({
+        cls: "mca-sec-hint",
+        text: hintParts.join(" · "),
+      });
+    }
+
+    const list = island.createDiv({ cls: "mca-rows-list" });
+    report.socialLimitInsights.forEach((item) => {
+      const row = list.createDiv({
+        cls: "mca-list-row",
+        attr: {
+          title: `В лимите: ${item.avgUnderLimit.toFixed(1)} (${item.daysUnder} дн.) · Сверх: ${item.avgOverLimit.toFixed(1)} (${item.daysOver} дн.)`,
+        },
+      });
+
+      row.createSpan({
+        cls: "mca-row-label",
+        text: item.metric === "score" ? "Оценка дня" : "Энергия",
+      });
+
+      const right = row.createDiv({ cls: "mca-row-right" });
+      right.createSpan({
+        cls: "mca-row-meta",
+        text: `${item.avgUnderLimit.toFixed(1)} / ${item.avgOverLimit.toFixed(1)}`,
+      });
+
+      const isUp = item.delta > 0;
+      right.createSpan({
+        cls: `mca-badge ${isUp ? "is-up" : "is-down"}`,
+        text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}`,
+      });
+    });
+  }
+
   private renderRecordDaysSection(
     container: HTMLElement,
     report: AnalyticsReport
@@ -346,11 +409,11 @@ export class CorrelationReportModal extends Modal {
     });
 
     const left = headerBtn.createDiv({ cls: "mca-pr-summary-left" });
-    left.createSpan({
+    const chevronEl = left.createSpan({
       cls: "mca-chevron",
-      text: "▸",
       attr: { "aria-hidden": "true" },
     });
+    setIcon(chevronEl, "chevron-right");
     left.createSpan({
       cls: "mca-sec-title",
       text: "Дни рекордов",

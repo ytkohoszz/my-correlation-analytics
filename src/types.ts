@@ -2,11 +2,15 @@
 export interface CorrelationAnalyticsSettings {
   diaryFolder: string;
   workoutsFolder: string;
+  socialLimitMin: number;
+  valuesCompassPath: string;
 }
 
 export const DEFAULT_SETTINGS: CorrelationAnalyticsSettings = {
   diaryFolder: "Ежедневник",
   workoutsFolder: "Знания",
+  socialLimitMin: 30,
+  valuesCompassPath: "_system/values-compass.json",
 };
 
 export interface DailyRecord {
@@ -24,6 +28,7 @@ export interface DailyRecord {
   steps: number | null;
   focusHours: number | null; // глубокая_работа_часов
   socialMinutes: number | null; // соцсети_мин
+  valuesActionsCount: number | null; // кол-во ценностных действий из _system/values-compass.json
   bedtime: string | null;
   wakeup: string | null;
   habits: {
@@ -33,6 +38,7 @@ export interface DailyRecord {
     режим_сна: boolean | null;
     диета: boolean | null;
     без_соцсетей: boolean | null;
+    момент_присутствия: boolean | null;
   };
 }
 
@@ -45,7 +51,8 @@ export type MetricGroup =
   | "focus"
   | "digital"
   | "reading"
-  | "discipline";
+  | "discipline"
+  | "values";
 
 export type NumericMetricKey = keyof Omit<
   DailyRecord,

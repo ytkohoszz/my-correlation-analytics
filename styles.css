@@ -139,7 +139,7 @@
   box-shadow:
     var(--glass-base-m, none),
     0 0 0 0.5px var(--trans-faint-25, var(--background-modifier-border)),
-    inset 2.5px 0 0 0 color-mix(in oklab, var(--color-blue, #599ed6) 75%, transparent),
+    inset 2.5px 0 0 0 color-mix(in oklch, var(--color-blue, #599ed6) 75%, transparent),
     var(--shadow-setting-items, none);
 }
 
@@ -194,17 +194,19 @@
 .mod-correlation-report .mca-corr-card.is-lag {
   box-shadow:
     var(--shadow-input, 0 0 0 0.5px var(--trans-faint-20, var(--background-modifier-border))),
-    inset 2.5px 0 0 0 color-mix(in oklab, var(--color-blue, #599ed6) 85%, transparent);
+    inset 2.5px 0 0 0 color-mix(in oklch, var(--color-blue, #599ed6) 85%, transparent);
 }
 
-.mod-correlation-report .mca-corr-card:hover {
-  background: var(--background-modifier-hover);
+@media (hover: hover) {
+  .mod-correlation-report .mca-corr-card:hover {
+    background: var(--background-modifier-hover);
+  }
 }
 
 .mod-correlation-report .mca-corr-card.is-expanded {
   background: var(--background-primary);
   box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--interactive-accent) 55%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--interactive-accent) 55%, transparent),
     var(--shadow-s, none);
 }
 
@@ -228,7 +230,8 @@
   justify-content: space-between;
   gap: 10px;
   padding: 7px 2px;
-  border-bottom: 1px solid var(--trans-faint-20, var(--background-modifier-border));
+  border-bottom: none;
+  box-shadow: inset 0 -0.5px 0 0 var(--trans-faint-20, var(--background-modifier-border));
 }
 
 .mod-correlation-report .mca-list-row:first-child {
@@ -237,7 +240,7 @@
 
 .mod-correlation-report .mca-list-row:last-child {
   padding-bottom: 2px;
-  border-bottom: none;
+  box-shadow: none;
 }
 
 .mod-correlation-report .mca-row-label {
@@ -287,23 +290,33 @@
 
 .mod-correlation-report .mca-badge.is-up {
   color: var(--color-green, #4aab80);
-  background: color-mix(in oklab, var(--color-green, #4aab80) 14%, transparent);
-  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, var(--color-green, #4aab80) 35%, transparent);
+  background: color-mix(in oklch, var(--color-green, #4aab80) 14%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--color-green, #4aab80) 35%, transparent);
 }
 
 .mod-correlation-report .mca-badge.is-down {
   color: var(--color-red, #d85b57);
-  background: color-mix(in oklab, var(--color-red, #d85b57) 14%, transparent);
-  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, var(--color-red, #d85b57) 35%, transparent);
+  background: color-mix(in oklch, var(--color-red, #d85b57) 14%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--color-red, #d85b57) 35%, transparent);
 }
 
 .mod-correlation-report .mca-chevron {
-  display: inline-block;
-  font-size: 0.76rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   color: var(--text-faint);
+  flex-shrink: 0;
   transition:
     transform var(--anim-duration-fast, 150ms) var(--vl-ease-out, cubic-bezier(0.3, 0.75, 0, 1)),
     color var(--anim-super-smooth, 75ms ease-out);
+}
+
+.mod-correlation-report .mca-chevron svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
 }
 
 .mod-correlation-report .mca-corr-card.is-expanded .mca-chevron,
@@ -352,7 +365,8 @@
 .mod-correlation-report .mca-plot-host {
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--trans-faint-20, var(--background-modifier-border));
+  border-top: none;
+  box-shadow: inset 0 0.5px 0 0 var(--trans-faint-20, var(--background-modifier-border));
   cursor: default;
 }
 
@@ -411,7 +425,7 @@
   box-shadow:
     var(--glass-base-m, none),
     0 0 0 0.5px var(--trans-faint-25, var(--background-modifier-border)),
-    inset 0 2px 0 0 color-mix(in oklab, var(--color-orange, #e5a158) 70%, transparent),
+    inset 0 2px 0 0 color-mix(in oklch, var(--color-orange, #e5a158) 70%, transparent),
     var(--shadow-setting-items, none);
 }
 
@@ -467,7 +481,8 @@
   gap: 10px;
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--trans-faint-20, var(--background-modifier-border));
+  border-top: none;
+  box-shadow: inset 0 0.5px 0 0 var(--trans-faint-20, var(--background-modifier-border));
 }
 
 .mod-correlation-report .mca-pr-warning {
@@ -477,8 +492,8 @@
   border: none;
   border-radius: var(--radius-s, 8px);
   -electron-corner-smoothing: var(--corner-smoothing, 60%);
-  background: color-mix(in oklab, var(--color-orange, #e5a158) 12%, transparent);
-  box-shadow: inset 0 0 0 0.5px color-mix(in oklab, var(--color-orange, #e5a158) 35%, transparent);
+  background: color-mix(in oklch, var(--color-orange, #e5a158) 12%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--color-orange, #e5a158) 35%, transparent);
   color: var(--color-orange, #e5a158);
 }
 
@@ -560,26 +575,32 @@ body.is-tablet .modal.mod-correlation-report .modal-content {
 
 body.is-mobile .mod-correlation-report button.mca-seg-btn,
 body.is-tablet .mod-correlation-report button.mca-seg-btn {
-  min-height: 36px;
-  height: 36px;
+  min-height: 38px;
+  height: 38px;
   padding: 0 14px;
   font-size: 0.82rem;
 }
 
 body.is-mobile .mod-correlation-report button.mca-ghost-btn,
 body.is-tablet .mod-correlation-report button.mca-ghost-btn {
-  min-height: 38px;
-  height: 38px;
+  min-height: 40px;
+  height: 40px;
   padding: 0 16px;
   font-size: 0.82rem;
 }
 
 body.is-mobile .mod-correlation-report .mca-corr-card,
 body.is-tablet .mod-correlation-report .mca-corr-card {
+  min-height: 44px;
   padding: 12px 14px;
+}
+
+body.is-mobile .mod-correlation-report .mca-list-row,
+body.is-tablet .mod-correlation-report .mca-list-row {
+  padding: 9px 2px;
 }
 
 body.is-mobile .mod-correlation-report button.mca-pr-summary,
 body.is-tablet .mod-correlation-report button.mca-pr-summary {
-  min-height: 36px;
+  min-height: 40px;
 }

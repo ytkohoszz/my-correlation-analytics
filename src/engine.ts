@@ -45,6 +45,8 @@ export const METRIC_GROUPS: Record<string, MetricGroup> = {
   pagesRead: "reading",
   чтение: "reading",
   nofap: "discipline",
+  valuesActionsCount: "values",
+  момент_присутствия: "values",
 };
 
 /**
@@ -276,6 +278,38 @@ export const WHITELISTED_METRIC_PAIRS: readonly WhitelistPairSpec[] = [
     // Базовая локомоторная активность и общий дневной тонус взаимно поддерживают друг друга
     rationale: "Взаимная сопряжённость фоновой двигательной активности и дневного тонуса",
   },
+  {
+    id: "values_actions_score",
+    leftKey: "valuesActionsCount",
+    leftType: "numeric",
+    leftGroup: "values",
+    leftLabel: "Ценностные действия",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Ценностные действия → Оценка дня",
+    // Осознанные шаги в сторону личных ценностей повышают субъективную осмысленность и оценку дня
+    rationale: "Количество зафиксированных ценностных действий влияет на итоговую оценку дня",
+  },
+  {
+    id: "values_actions_energy",
+    leftKey: "valuesActionsCount",
+    leftType: "numeric",
+    leftGroup: "values",
+    leftLabel: "Ценностные действия",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Ценностные действия → Энергия",
+    // Согласованность действий с ценностями поддерживает внутренний ресурс и уровень энергии
+    rationale: "Сопряжённость ценностной активности и дневного уровня энергии",
+  },
 ];
 
 export function variance(xs: number[]): number {
@@ -375,6 +409,7 @@ const HABIT_NAMES: Record<string, string> = {
   режим_сна: "Режим сна",
   диета: "Диета",
   без_соцсетей: "Без соцсетей",
+  момент_присутствия: "Момент присутствия",
 };
 
 function parseDateMs(iso: string): number {
@@ -475,6 +510,7 @@ function buildHumanConclusion(
 export interface AnalyzeOptions {
   recordDatesSet?: Set<string>;
   workoutDatesSet?: Set<string>;
+  socialLimitMin?: number;
 }
 
 /**
@@ -637,12 +673,14 @@ export function analyzeRecordDaysComparisons(
   addNumericRow("steps", "Шаги", "шаг", true, (r) => r.steps);
   addNumericRow("pagesRead", "Чтение", "стр", true, (r) => r.pagesRead);
   addNumericRow("socialMinutes", "Скроллинг соцсетей", "мин", false, (r) => r.socialMinutes);
+  addNumericRow("valuesActionsCount", "Ценностные действия", "шт", true, (r) => r.valuesActionsCount);
 
   addBooleanRateRow("habit_nofap", "Привычка: NoFap", true, (r) => r.habits.nofap);
   addBooleanRateRow("habit_sleep", "Привычка: Режим сна", true, (r) => r.habits.режим_сна);
   addBooleanRateRow("habit_diet", "Привычка: Диета", true, (r) => r.habits.диета);
   addBooleanRateRow("habit_nosocial", "Привычка: Без соцсетей", true, (r) => r.habits.без_соцсетей);
   addBooleanRateRow("habit_reading", "Привычка: Чтение", true, (r) => r.habits.чтение);
+  addBooleanRateRow("habit_savoring", "Привычка: Момент присутствия", true, (r) => r.habits.момент_присутствия);
 
   return {
     totalRecordDaysInPeriod: recordDays.length,
@@ -961,11 +999,18 @@ export function analyzeRecords(
   }
 
   // ─── 4. Сравнение по лимиту соцсетей ────────────────────────────────────
+  const socialLimitMin =
+    typeof options.socialLimitMin === "number" &&
+    Number.isFinite(options.socialLimitMin) &&
+    options.socialLimitMin >= 0
+      ? options.socialLimitMin
+      : SOCIAL_LIMIT_MIN;
+
   const under: DailyRecord[] = [];
   const over: DailyRecord[] = [];
   for (const r of slice) {
     if (r.socialMinutes === null) continue;
-    if (r.socialMinutes <= SOCIAL_LIMIT_MIN) under.push(r);
+    if (r.socialMinutes <= socialLimitMin) under.push(r);
     else over.push(r);
   }
 
@@ -1002,7 +1047,7 @@ export function analyzeRecords(
         daysUnder: underVals.length,
         daysOver: overVals.length,
         summary:
-          `При удержании лимита соцсетей (≤${SOCIAL_LIMIT_MIN} мин) средняя ${metricText} ` +
+          `При удержании лимита соцсетей (≤${socialLimitMin} мин) средняя ${metricText} ` +
           `${comparison} на ${signedText} балла ` +
           `(${underVals.length} дн. нормы / ${overVals.length} дн. превышения)`,
       });
