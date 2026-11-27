@@ -4,6 +4,7 @@ export interface CorrelationAnalyticsSettings {
   workoutsFolder: string;
   socialLimitMin: number;
   valuesCompassPath: string;
+  readingLogPath: string;
 }
 
 export const DEFAULT_SETTINGS: CorrelationAnalyticsSettings = {
@@ -11,7 +12,18 @@ export const DEFAULT_SETTINGS: CorrelationAnalyticsSettings = {
   workoutsFolder: "Знания",
   socialLimitMin: 30,
   valuesCompassPath: "_system/values-compass.json",
+  readingLogPath: "_system/reading-log.json",
 };
+
+export interface WorkoutDayMetrics {
+  sessionsCount: number;
+  durationMin: number | null;
+  setsCount: number;
+  totalReps: number;
+  totalHoldSec: number;
+  weightedSetsCount: number;
+  tonnageKg: number;
+}
 
 export interface DailyRecord {
   dateISO: string;
@@ -26,9 +38,19 @@ export interface DailyRecord {
   pagesRead: number | null;
   screenHours: number | null;
   steps: number | null;
-  focusHours: number | null; // глубокая_работа_часов
+  focusHours: number | null; // из глубокая_работа_мин / глубокая_работа_часов / фокус_по_целям
   socialMinutes: number | null; // соцсети_мин
   valuesActionsCount: number | null; // кол-во ценностных действий из _system/values-compass.json
+  dayProgressPct: number | null; // прогресс_дня_процент (или расчёт по цели_дня)
+  dayGoalsCount: number | null; // количество задач в цели_дня
+  srCardsReviewed: number | null; // карточек_пройдено (my-sr-trainer)
+  grammarExercises: number | null; // грамматика_упражнений (my-grammar-trainer)
+  bedtimeHour: number | null; // отбой в часах с непрерывной шкалой (00:30 -> 24.5)
+  wakeupHour: number | null; // подъём в часах (07:30 -> 7.5)
+  workoutDurationMin: number | null; // длительность_мин из Знания/Тренировка *.md
+  workoutSetsCount: number | null; // число подходов в день тренировки
+  workoutTotalReps: number | null; // сумма повторений в день тренировки
+  workoutTonnageKg: number | null; // тоннаж доп. веса (повторы * доп_вес_кг)
   bedtime: string | null;
   wakeup: string | null;
   habits: {
@@ -52,7 +74,9 @@ export type MetricGroup =
   | "digital"
   | "reading"
   | "discipline"
-  | "values";
+  | "values"
+  | "learning"
+  | "planning";
 
 export type NumericMetricKey = keyof Omit<
   DailyRecord,
@@ -107,9 +131,13 @@ export interface RecordDayMetricRow {
   conclusion: string;
 }
 
+export type TargetMetricKey = "score" | "energy" | "focusHours";
+
 export interface RecordDaysReport {
   totalRecordDaysInPeriod: number;
   totalWorkoutDaysInPeriod: number;
+  totalBaselineDaysInPeriod: number;
+  comparisonBaseline: "workout_days" | "all_days";
   lowSampleOverall: boolean;
   rows: RecordDayMetricRow[];
 }
@@ -141,7 +169,7 @@ export interface MetricCorrelation {
 export interface HabitImpact {
   habitKey: string;
   habitName: string;
-  targetMetric: "score" | "energy";
+  targetMetric: TargetMetricKey;
   avgWhenTrue: number;
   avgWhenFalse: number;
   delta: number;
@@ -160,7 +188,7 @@ export interface LagImpact {
 }
 
 export interface SocialLimitInsight {
-  metric: "score" | "energy";
+  metric: TargetMetricKey;
   metricLabel: string;
   avgUnderLimit: number;
   avgOverLimit: number;

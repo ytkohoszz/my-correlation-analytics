@@ -11,6 +11,8 @@ import {
   RecordDaysReport,
   RecordDayMetricRow,
   MetricGroup,
+  NumericMetricKey,
+  TargetMetricKey,
   WhitelistPairSpec,
 } from "./types";
 
@@ -33,11 +35,17 @@ export const METRIC_GROUPS: Record<string, MetricGroup> = {
   диета: "nutrition",
   weight: "body",
   sleepHours: "sleep",
+  bedtimeHour: "sleep",
+  wakeupHour: "sleep",
   режим_сна: "sleep",
   score: "wellbeing",
   energy: "wellbeing",
   тренировка: "activity",
   steps: "activity",
+  workoutDurationMin: "activity",
+  workoutSetsCount: "activity",
+  workoutTotalReps: "activity",
+  workoutTonnageKg: "activity",
   focusHours: "focus",
   socialMinutes: "digital",
   screenHours: "digital",
@@ -47,6 +55,10 @@ export const METRIC_GROUPS: Record<string, MetricGroup> = {
   nofap: "discipline",
   valuesActionsCount: "values",
   момент_присутствия: "values",
+  dayProgressPct: "planning",
+  dayGoalsCount: "planning",
+  srCardsReviewed: "learning",
+  grammarExercises: "learning",
 };
 
 /**
@@ -307,8 +319,551 @@ export const WHITELISTED_METRIC_PAIRS: readonly WhitelistPairSpec[] = [
     direction: "→",
     lagDays: 0,
     label: "Ценностные действия → Энергия",
-    // Согласованность действий с ценностями поддерживает внутренний ресурс и уровень энергии
     rationale: "Сопряжённость ценностной активности и дневного уровня энергии",
+  },
+  {
+    id: "values_actions_focus",
+    leftKey: "valuesActionsCount",
+    leftType: "numeric",
+    leftGroup: "values",
+    leftLabel: "Ценностные действия",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "↔",
+    lagDays: 0,
+    label: "Ценностные действия ↔ Фокус",
+    rationale: "Согласованность осмысленных действий и времени глубокой работы",
+  },
+  {
+    id: "savoring_score",
+    leftKey: "момент_присутствия",
+    leftType: "habit",
+    leftGroup: "values",
+    leftLabel: "Момент присутствия",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Момент присутствия → Оценка дня",
+    rationale: "Практика присутствия усиливает субъективное качество дня",
+  },
+  {
+    id: "savoring_energy",
+    leftKey: "момент_присутствия",
+    leftType: "habit",
+    leftGroup: "values",
+    leftLabel: "Момент присутствия",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Момент присутствия → Энергия",
+    rationale: "Связь практики присутствия с ощущением внутреннего ресурса",
+  },
+  // ── Фокус и план дня ────────────────────────────────────────────────────
+  {
+    id: "sleep_hours_focus",
+    leftKey: "sleepHours",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Длительность сна (ч)",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 0,
+    label: "Длительность сна → Глубокая работа",
+    rationale: "Продолжительность сна определяет когнитивный ресурс для фокуса",
+  },
+  {
+    id: "sleep_regime_focus",
+    leftKey: "режим_сна",
+    leftType: "habit",
+    leftGroup: "sleep",
+    leftLabel: "Режим сна",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 0,
+    label: "Режим сна → Глубокая работа",
+    rationale: "Стабильный график сна поддерживает длительность глубокой работы",
+  },
+  {
+    id: "energy_focus",
+    leftKey: "energy",
+    leftType: "numeric",
+    leftGroup: "wellbeing",
+    leftLabel: "Энергия",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "↔",
+    lagDays: 0,
+    label: "Энергия ↔ Глубокая работа",
+    rationale: "Связь дневного уровня энергии с объёмом глубокого фокуса",
+  },
+  {
+    id: "workout_focus",
+    leftKey: "тренировка",
+    leftType: "habit",
+    leftGroup: "activity",
+    leftLabel: "Тренировка",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 0,
+    label: "Тренировка → Глубокая работа",
+    rationale: "Влияние силовой тренировки на объём глубокой работы в тот же день",
+  },
+  {
+    id: "focus_energy_lag1",
+    leftKey: "focusHours",
+    leftType: "numeric",
+    leftGroup: "focus",
+    leftLabel: "Глубокая работа (ч)",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 1,
+    label: "Глубокая работа → Энергия (+1 дн.)",
+    rationale: "Отслеживание когнитивной усталости или подъёма на следующий день",
+  },
+  {
+    id: "focus_day_progress",
+    leftKey: "focusHours",
+    leftType: "numeric",
+    leftGroup: "focus",
+    leftLabel: "Глубокая работа (ч)",
+    rightKey: "dayProgressPct",
+    rightGroup: "planning",
+    rightLabel: "План дня (%)",
+    rightUnit: "%",
+    direction: "→",
+    lagDays: 0,
+    label: "Глубокая работа → План дня",
+    rationale: "Время в фокусе определяет долю выполненных задач плана дня",
+  },
+  {
+    id: "day_progress_score",
+    leftKey: "dayProgressPct",
+    leftType: "numeric",
+    leftGroup: "planning",
+    leftLabel: "План дня (%)",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "План дня → Оценка дня",
+    rationale: "Выполнение запланированных целей напрямую влияет на оценку дня",
+  },
+  {
+    id: "sleep_hours_day_progress",
+    leftKey: "sleepHours",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Длительность сна (ч)",
+    rightKey: "dayProgressPct",
+    rightGroup: "planning",
+    rightLabel: "План дня (%)",
+    rightUnit: "%",
+    direction: "→",
+    lagDays: 0,
+    label: "Длительность сна → План дня",
+    rationale: "Качество восстановления отражается на закрытии задач дня",
+  },
+  {
+    id: "social_day_progress",
+    leftKey: "socialMinutes",
+    leftType: "numeric",
+    leftGroup: "digital",
+    leftLabel: "Скроллинг соцсетей (мин)",
+    rightKey: "dayProgressPct",
+    rightGroup: "planning",
+    rightLabel: "План дня (%)",
+    rightUnit: "%",
+    direction: "→",
+    lagDays: 0,
+    label: "Скроллинг соцсетей → План дня",
+    rationale: "Скроллинг вытесняет время на выполнение целей дня",
+  },
+  // ── Время отбоя и экранное время ────────────────────────────────────────
+  {
+    id: "bedtime_energy_sync",
+    leftKey: "bedtimeHour",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Время отбоя",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Время отбоя → Энергия",
+    rationale: "Более ранний отбой поддерживает утреннюю бодрость",
+  },
+  {
+    id: "bedtime_energy_lag1",
+    leftKey: "bedtimeHour",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Время отбоя",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 1,
+    label: "Время отбоя → Энергия (+1 дн.)",
+    rationale: "Время отбоя вечером отражается на энергии следующего дня",
+  },
+  {
+    id: "bedtime_score_sync",
+    leftKey: "bedtimeHour",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Время отбоя",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Время отбоя → Оценка дня",
+    rationale: "Сдвиг отбоя влияет на субъективное качество дня",
+  },
+  {
+    id: "bedtime_score_lag1",
+    leftKey: "bedtimeHour",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Время отбоя",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 1,
+    label: "Время отбоя → Оценка дня (+1 дн.)",
+    rationale: "Поздний отбой вечером снижает качество следующего дня",
+  },
+  {
+    id: "bedtime_focus_sync",
+    leftKey: "bedtimeHour",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Время отбоя",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 0,
+    label: "Время отбоя → Глубокая работа",
+    rationale: "Стабильный ранний отбой поддерживает концентрацию",
+  },
+  {
+    id: "bedtime_focus_lag1",
+    leftKey: "bedtimeHour",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Время отбоя",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 1,
+    label: "Время отбоя → Глубокая работа (+1 дн.)",
+    rationale: "Поздний отбой вечером снижает объём фокуса на следующий день",
+  },
+  {
+    id: "screen_sleep_sync",
+    leftKey: "screenHours",
+    leftType: "numeric",
+    leftGroup: "digital",
+    leftLabel: "Экранное время (ч)",
+    rightKey: "sleepHours",
+    rightGroup: "sleep",
+    rightLabel: "Длительность сна (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 0,
+    label: "Экранное время → Сон",
+    rationale: "Высокое экранное время сокращает ночной сон",
+  },
+  {
+    id: "screen_sleep_lag1",
+    leftKey: "screenHours",
+    leftType: "numeric",
+    leftGroup: "digital",
+    leftLabel: "Экранное время (ч)",
+    rightKey: "sleepHours",
+    rightGroup: "sleep",
+    rightLabel: "Длительность сна (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 1,
+    label: "Экранное время → Сон (+1 дн.)",
+    rationale: "Высокая экранная нагрузка влияет на сон следующей ночи",
+  },
+  {
+    id: "screen_focus",
+    leftKey: "screenHours",
+    leftType: "numeric",
+    leftGroup: "digital",
+    leftLabel: "Экранное время (ч)",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "→",
+    lagDays: 0,
+    label: "Экранное время → Глубокая работа",
+    rationale: "Избыточное время у экрана телефона мешает глубокой работе",
+  },
+  {
+    id: "screen_score",
+    leftKey: "screenHours",
+    leftType: "numeric",
+    leftGroup: "digital",
+    leftLabel: "Экранное время (ч)",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Экранное время → Оценка дня",
+    rationale: "Связь общего экранного времени с итоговой оценкой дня",
+  },
+  // ── Количественные метрики тренировок и углеводы ────────────────────────
+  {
+    id: "workout_sets_energy_lag1",
+    leftKey: "workoutSetsCount",
+    leftType: "numeric",
+    leftGroup: "activity",
+    leftLabel: "Подходы тренировки",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 1,
+    label: "Подходы тренировки → Энергия (+1 дн.)",
+    rationale: "Объём силовой тренировки влияет на восстановление и энергию на следующий день",
+  },
+  {
+    id: "workout_tonnage_energy_lag1",
+    leftKey: "workoutTonnageKg",
+    leftType: "numeric",
+    leftGroup: "activity",
+    leftLabel: "Тоннаж доп. веса (кг)",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 1,
+    label: "Тоннаж тренировки → Энергия (+1 дн.)",
+    rationale: "Силовая нагрузка с дополнительным весом и утомление на следующий день",
+  },
+  {
+    id: "workout_duration_score",
+    leftKey: "workoutDurationMin",
+    leftType: "numeric",
+    leftGroup: "activity",
+    leftLabel: "Длительность тренировки (мин)",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Длительность тренировки → Оценка дня",
+    rationale: "Сопряжённость продолжительности тренировки и оценки дня",
+  },
+  {
+    id: "sleep_workout_reps",
+    leftKey: "sleepHours",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Длительность сна (ч)",
+    rightKey: "workoutTotalReps",
+    rightGroup: "activity",
+    rightLabel: "Повторения за тренировку",
+    rightUnit: "повт.",
+    direction: "→",
+    lagDays: 0,
+    label: "Длительность сна → Объём повторений",
+    rationale: "Влияние ночного сна на тренировочный объём",
+  },
+  {
+    id: "sleep_workout_tonnage",
+    leftKey: "sleepHours",
+    leftType: "numeric",
+    leftGroup: "sleep",
+    leftLabel: "Длительность сна (ч)",
+    rightKey: "workoutTonnageKg",
+    rightGroup: "activity",
+    rightLabel: "Тоннаж доп. веса (кг)",
+    rightUnit: "кг",
+    direction: "→",
+    lagDays: 0,
+    label: "Длительность сна → Тоннаж",
+    rationale: "Влияние сна на работу с дополнительным весом",
+  },
+  {
+    id: "carbs_workout_reps_lag1",
+    leftKey: "carbs",
+    leftType: "numeric",
+    leftGroup: "nutrition",
+    leftLabel: "Углеводы (г)",
+    rightKey: "workoutTotalReps",
+    rightGroup: "activity",
+    rightLabel: "Повторения за тренировку",
+    rightUnit: "повт.",
+    direction: "→",
+    lagDays: 1,
+    label: "Углеводы → Объём повторений (+1 дн.)",
+    rationale: "Запас гликогена после углеводного рациона накануне тренировки",
+  },
+  {
+    id: "carbs_energy",
+    leftKey: "carbs",
+    leftType: "numeric",
+    leftGroup: "nutrition",
+    leftLabel: "Углеводы (г)",
+    rightKey: "energy",
+    rightGroup: "wellbeing",
+    rightLabel: "Энергия",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Углеводы → Энергия",
+    rationale: "Влияние потребления углеводов на дневной уровень энергии",
+  },
+  {
+    id: "carbs_weight_lag1",
+    leftKey: "carbs",
+    leftType: "numeric",
+    leftGroup: "nutrition",
+    leftLabel: "Углеводы (г)",
+    rightKey: "weight",
+    rightGroup: "body",
+    rightLabel: "Вес (кг)",
+    rightUnit: "кг",
+    direction: "→",
+    lagDays: 1,
+    label: "Углеводы → Вес (+1 дн.)",
+    rationale: "Задержка гликогена и воды на утреннем взвешивании следующего дня",
+  },
+  // ── Чтение и обучение (SR-карточки, грамматика) ─────────────────────────
+  {
+    id: "pages_score",
+    leftKey: "pagesRead",
+    leftType: "numeric",
+    leftGroup: "reading",
+    leftLabel: "Чтение (стр.)",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Чтение (стр.) → Оценка дня",
+    rationale: "Связь объёма чтения с удовлетворённостью днём",
+  },
+  {
+    id: "pages_sleep_sync",
+    leftKey: "pagesRead",
+    leftType: "numeric",
+    leftGroup: "reading",
+    leftLabel: "Чтение (стр.)",
+    rightKey: "sleepHours",
+    rightGroup: "sleep",
+    rightLabel: "Длительность сна (ч)",
+    rightUnit: "ч",
+    direction: "↔",
+    lagDays: 0,
+    label: "Чтение (стр.) ↔ Сон",
+    rationale: "Сопряжённость спокойного чтения и длительности сна",
+  },
+  {
+    id: "sr_cards_score",
+    leftKey: "srCardsReviewed",
+    leftType: "numeric",
+    leftGroup: "learning",
+    leftLabel: "SR-карточки",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "SR-карточки → Оценка дня",
+    rationale: "Связь ежедневного повторения карточек с оценкой дня",
+  },
+  {
+    id: "sr_cards_focus",
+    leftKey: "srCardsReviewed",
+    leftType: "numeric",
+    leftGroup: "learning",
+    leftLabel: "SR-карточки",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "↔",
+    lagDays: 0,
+    label: "SR-карточки ↔ Глубокая работа",
+    rationale: "Сопряжённость регулярного повторения карточек и учебного фокуса",
+  },
+  {
+    id: "grammar_score",
+    leftKey: "grammarExercises",
+    leftType: "numeric",
+    leftGroup: "learning",
+    leftLabel: "Грамматика (упр.)",
+    rightKey: "score",
+    rightGroup: "wellbeing",
+    rightLabel: "Оценка дня",
+    rightUnit: "балла",
+    direction: "→",
+    lagDays: 0,
+    label: "Грамматика → Оценка дня",
+    rationale: "Связь практики английской грамматики с оценкой дня",
+  },
+  {
+    id: "grammar_focus",
+    leftKey: "grammarExercises",
+    leftType: "numeric",
+    leftGroup: "learning",
+    leftLabel: "Грамматика (упр.)",
+    rightKey: "focusHours",
+    rightGroup: "focus",
+    rightLabel: "Глубокая работа (ч)",
+    rightUnit: "ч",
+    direction: "↔",
+    lagDays: 0,
+    label: "Грамматика ↔ Глубокая работа",
+    rationale: "Сопряжённость упражнений по грамматике с общим учебным ритмом",
   },
 ];
 
@@ -392,7 +947,7 @@ function classifyRStrength(r: number): string {
 
 function classifyDeltaStrength(delta: number, unit: string): string {
   const absD = Math.abs(delta);
-  if (unit === "балла") {
+  if (unit === "балла" || unit === "ч") {
     if (absD >= 1.2) return "сильная";
     if (absD >= 0.7) return "умеренная";
     return "слабая";
@@ -455,7 +1010,8 @@ function buildHumanConclusion(
   unit: string,
   kind: "numeric" | "habit_pct",
   delta: number | null,
-  lowSample: boolean
+  lowSample: boolean,
+  baselineName: string
 ): string {
   if (delta === null) {
     return "Недостаточно записей для сравнения";
@@ -479,27 +1035,40 @@ function buildHumanConclusion(
 
   const absVal = Math.abs(delta);
   if (
-    (key === "sleepHours" && absVal < 0.08) ||
-    (key === "focusHours" && absVal < 0.08) ||
-    (key === "calories" && absVal < 15) ||
+    ((key === "sleepHours" || key === "prev_sleepHours") && absVal < 0.08) ||
+    ((key === "focusHours" || key === "prev_focusHours") && absVal < 0.08) ||
+    (key === "bedtimeHour" && absVal < 0.08) ||
+    ((key === "calories" || key === "prev_calories") && absVal < 15) ||
+    (key === "workoutTonnageKg" && absVal < 15) ||
+    (key === "workoutDurationMin" && absVal < 2) ||
     (key === "steps" && absVal < 100) ||
     absVal < 0.05
   ) {
-    return `${prefix}В дни рекордов и в остальные дни почти не отличается`;
+    return `${prefix}По сравнению с ${baselineName} почти не отличается`;
   }
 
-  if (key === "sleepHours") {
+  if (key === "bedtimeHour") {
     const durText = formatHoursDiffHuman(delta);
     return delta > 0
-      ? `${prefix}В дни рекордов сон в среднем на ${durText} дольше`
-      : `${prefix}В дни рекордов сон в среднем на ${durText} короче`;
+      ? `${prefix}В дни рекордов отбой в среднем на ${durText} позже`
+      : `${prefix}В дни рекордов отбой в среднем на ${durText} раньше`;
   }
 
-  if (key === "focusHours") {
+  if (key === "sleepHours" || key === "prev_sleepHours") {
     const durText = formatHoursDiffHuman(delta);
+    const what = key === "prev_sleepHours" ? "сон накануне" : "сон";
     return delta > 0
-      ? `${prefix}В дни рекордов глубокая работа в среднем на ${durText} дольше`
-      : `${prefix}В дни рекордов глубокая работа в среднем на ${durText} меньше`;
+      ? `${prefix}В дни рекордов ${what} в среднем на ${durText} дольше`
+      : `${prefix}В дни рекордов ${what} в среднем на ${durText} короче`;
+  }
+
+  if (key === "focusHours" || key === "prev_focusHours") {
+    const durText = formatHoursDiffHuman(delta);
+    const what =
+      key === "prev_focusHours" ? "глубокая работа накануне" : "глубокая работа";
+    return delta > 0
+      ? `${prefix}В дни рекордов ${what} в среднем на ${durText} дольше`
+      : `${prefix}В дни рекордов ${what} в среднем на ${durText} меньше`;
   }
 
   const cleanUnit = unit === "/10" ? "балла" : unit;
@@ -514,27 +1083,55 @@ export interface AnalyzeOptions {
 }
 
 /**
- * Сравнивает показатели в дни рекордов против всех остальных дней периода.
+ * Сравнивает показатели в дни рекордов против обычных тренировочных дней
+ * (или всех остальных дней периода, если обычных тренировок меньше 3).
  */
 export function analyzeRecordDaysComparisons(
   sliceRecords: DailyRecord[],
   recordDatesSet: Set<string>,
-  workoutDatesSet: Set<string>
+  workoutDatesSet: Set<string>,
+  allRecordsByDate?: Map<string, DailyRecord>
 ): RecordDaysReport {
+  const lookupByDate =
+    allRecordsByDate ??
+    new Map<string, DailyRecord>(sliceRecords.map((r) => [r.dateISO, r]));
+
   const recordDays: DailyRecord[] = [];
-  const otherDays: DailyRecord[] = [];
+  const nonRecordWorkoutDays: DailyRecord[] = [];
+  const allNonRecordDays: DailyRecord[] = [];
   let totalWorkoutDaysInPeriod = 0;
 
   for (const r of sliceRecords) {
-    if (workoutDatesSet.has(r.dateISO) || r.habits.тренировка === true) {
+    const isWorkoutDay =
+      workoutDatesSet.has(r.dateISO) || r.habits.тренировка === true;
+    if (isWorkoutDay) {
       totalWorkoutDaysInPeriod++;
     }
     if (recordDatesSet.has(r.dateISO)) {
       recordDays.push(r);
     } else {
-      otherDays.push(r);
+      allNonRecordDays.push(r);
+      if (isWorkoutDay) {
+        nonRecordWorkoutDays.push(r);
+      }
     }
   }
+
+  const useWorkoutBaseline = nonRecordWorkoutDays.length >= MIN_GROUP_DAYS;
+  const baselineDays = useWorkoutBaseline
+    ? nonRecordWorkoutDays
+    : allNonRecordDays;
+  const comparisonBaseline: "workout_days" | "all_days" = useWorkoutBaseline
+    ? "workout_days"
+    : "all_days";
+  const baselineName = useWorkoutBaseline
+    ? "обычными тренировками"
+    : "остальными днями";
+
+  const prevRecordOf = (r: DailyRecord): DailyRecord | undefined => {
+    const prevISO = addDaysISO(r.dateISO, -1);
+    return prevISO ? lookupByDate.get(prevISO) : undefined;
+  };
 
   const rows: RecordDayMetricRow[] = [];
 
@@ -552,7 +1149,7 @@ export function analyzeRecordDaysComparisons(
       const v = getter(r);
       if (v !== null && Number.isFinite(v)) recVals.push(v);
     }
-    for (const r of otherDays) {
+    for (const r of baselineDays) {
       const v = getter(r);
       if (v !== null && Number.isFinite(v)) othVals.push(v);
     }
@@ -592,7 +1189,8 @@ export function analyzeRecordDaysComparisons(
         unit,
         "numeric",
         delta,
-        lowSample
+        lowSample,
+        baselineName
       ),
     });
   };
@@ -610,7 +1208,7 @@ export function analyzeRecordDaysComparisons(
       const b = getter(r);
       if (typeof b === "boolean") recBools.push(b);
     }
-    for (const r of otherDays) {
+    for (const r of baselineDays) {
       const b = getter(r);
       if (typeof b === "boolean") othBools.push(b);
     }
@@ -650,29 +1248,51 @@ export function analyzeRecordDaysComparisons(
         "%",
         "habit_pct",
         delta,
-        lowSample
+        lowSample,
+        baselineName
       ),
     });
   };
 
+  // Состояние и сон
   addNumericRow("score", "Оценка дня", "/10", true, (r) => r.score);
   addNumericRow("energy", "Энергия", "/10", true, (r) => r.energy);
   addNumericRow("sleepHours", "Сон", "ч", true, (r) => r.sleepHours);
+  addNumericRow("bedtimeHour", "Время отбоя", "ч", false, (r) => r.bedtimeHour);
   addBooleanRateRow(
     "sleepDeprived",
     "Недосып (< 7 ч сна)",
     false,
     (r) => (r.sleepHours !== null ? r.sleepHours < 7 : null)
   );
+
+  // Накануне (-1 день): восстановление и топливо перед тренировкой
+  addNumericRow("prev_sleepHours", "Сон накануне", "ч", true, (r) => prevRecordOf(r)?.sleepHours ?? null);
+  addNumericRow("prev_calories", "Калории накануне", "ккал", true, (r) => prevRecordOf(r)?.calories ?? null);
+  addNumericRow("prev_carbs", "Углеводы накануне", "г", true, (r) => prevRecordOf(r)?.carbs ?? null);
+  addNumericRow("prev_protein", "Белки накануне", "г", true, (r) => prevRecordOf(r)?.protein ?? null);
+  addNumericRow("prev_focusHours", "Фокус накануне", "ч", true, (r) => prevRecordOf(r)?.focusHours ?? null);
+
+  // Объём самой тренировки
+  addNumericRow("workoutDurationMin", "Длительность тренировки", "мин", true, (r) => r.workoutDurationMin);
+  addNumericRow("workoutSetsCount", "Подходов за тренировку", "подх.", true, (r) => r.workoutSetsCount);
+  addNumericRow("workoutTotalReps", "Повторений за тренировку", "повт.", true, (r) => r.workoutTotalReps);
+  addNumericRow("workoutTonnageKg", "Тоннаж доп. веса", "кг", true, (r) => r.workoutTonnageKg);
+
+  // Питание, вес и активность дня
   addNumericRow("calories", "Калории", "ккал", true, (r) => r.calories);
   addNumericRow("protein", "Белки", "г", true, (r) => r.protein);
   addNumericRow("fats", "Жиры", "г", true, (r) => r.fats);
   addNumericRow("carbs", "Углеводы", "г", true, (r) => r.carbs);
   addNumericRow("weight", "Вес тела", "кг", true, (r) => r.weight);
   addNumericRow("focusHours", "Глубокая работа", "ч", true, (r) => r.focusHours);
+  addNumericRow("dayProgressPct", "План дня", "%", true, (r) => r.dayProgressPct);
   addNumericRow("steps", "Шаги", "шаг", true, (r) => r.steps);
   addNumericRow("pagesRead", "Чтение", "стр", true, (r) => r.pagesRead);
+  addNumericRow("srCardsReviewed", "SR-карточки", "шт", true, (r) => r.srCardsReviewed);
+  addNumericRow("grammarExercises", "Грамматика", "упр.", true, (r) => r.grammarExercises);
   addNumericRow("socialMinutes", "Скроллинг соцсетей", "мин", false, (r) => r.socialMinutes);
+  addNumericRow("screenHours", "Экранное время", "ч", false, (r) => r.screenHours);
   addNumericRow("valuesActionsCount", "Ценностные действия", "шт", true, (r) => r.valuesActionsCount);
 
   addBooleanRateRow("habit_nofap", "Привычка: NoFap", true, (r) => r.habits.nofap);
@@ -685,8 +1305,10 @@ export function analyzeRecordDaysComparisons(
   return {
     totalRecordDaysInPeriod: recordDays.length,
     totalWorkoutDaysInPeriod,
+    totalBaselineDaysInPeriod: baselineDays.length,
+    comparisonBaseline,
     lowSampleOverall:
-      recordDays.length < MIN_GROUP_DAYS || otherDays.length < MIN_GROUP_DAYS,
+      recordDays.length < MIN_GROUP_DAYS || baselineDays.length < MIN_GROUP_DAYS,
     rows,
   };
 }
@@ -719,7 +1341,7 @@ function evaluateWhitelistedPairs(slice: DailyRecord[]): {
       const points: ScatterPoint[] = [];
 
       for (const r of ascSlice) {
-        const valX = r[spec.leftKey as keyof Omit<DailyRecord, "dateISO" | "habits" | "bedtime" | "wakeup">] as number | null;
+        const valX = r[spec.leftKey as NumericMetricKey];
         if (valX === null || !Number.isFinite(valX)) continue;
 
         const targetDate =
@@ -888,6 +1510,9 @@ export function analyzeRecords(
   limitDays: number = 30,
   options: AnalyzeOptions = {}
 ): AnalyticsReport {
+  const allRecordsByDate = new Map<string, DailyRecord>(
+    records.map((r) => [r.dateISO, r])
+  );
   const sortedDesc = [...records].sort((a, b) =>
     b.dateISO.localeCompare(a.dateISO)
   );
@@ -898,9 +1523,15 @@ export function analyzeRecords(
 
   // ─── 2. Влияние привычек внутри дня ─────────────────────────────────────
   const habitImpacts: HabitImpact[] = [];
-  const targets: Array<{ key: "score" | "energy"; name: string }> = [
-    { key: "score", name: "Оценку дня" },
-    { key: "energy", name: "Энергию" },
+  const targets: Array<{
+    key: TargetMetricKey;
+    name: string;
+    shortName: string;
+    unit: string;
+  }> = [
+    { key: "score", name: "Оценку дня", shortName: "оценка дня", unit: "балла" },
+    { key: "energy", name: "Энергию", shortName: "энергия", unit: "балла" },
+    { key: "focusHours", name: "Фокус", shortName: "глубокая работа", unit: "ч" },
   ];
 
   for (const [hKey, hName] of Object.entries(HABIT_NAMES)) {
@@ -924,6 +1555,7 @@ export function analyzeRecords(
         const delta = round1(avgTrue - avgFalse);
         const sign = delta > 0 ? "+" : "";
         const nDays = trueVals.length + falseVals.length;
+        const unitSuffix = t.key === "focusHours" ? " ч" : "";
 
         habitImpacts.push({
           habitKey: hKey,
@@ -934,7 +1566,7 @@ export function analyzeRecords(
           delta,
           countTrue: trueVals.length,
           countFalse: falseVals.length,
-          summary: `Наблюдаемая связь: в дни с привычкой среднее ${avgTrue.toFixed(1)} против ${avgFalse.toFixed(1)} без неё (${sign}${delta.toFixed(1)}, n = ${nDays} дн.)`,
+          summary: `Наблюдаемая связь: в дни с привычкой среднее ${avgTrue.toFixed(1)}${unitSuffix} против ${avgFalse.toFixed(1)}${unitSuffix} без неё (${sign}${delta.toFixed(1)}${unitSuffix}, n = ${nDays} дн.)`,
         });
       }
     }
@@ -942,8 +1574,8 @@ export function analyzeRecords(
 
   habitImpacts.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-  // ─── 3. Эффекты на следующий день ───────────────────────────────────────
-  const lagImpacts: LagImpact[] = [];
+  // ─── 3. Эффекты на следующий день (привычки + числовые факторы) ─────────
+  const lagCandidates: Array<LagImpact & { sortScore: number }> = [];
   const ascSorted = [...slice].sort((a, b) =>
     a.dateISO.localeCompare(b.dateISO)
   );
@@ -961,6 +1593,7 @@ export function analyzeRecords(
   }
 
   if (consecutivePairs.length >= 5) {
+    // 3a. Привычки сегодня -> Оценка / Энергия / Фокус завтра
     for (const [hKey, hName] of Object.entries(HABIT_NAMES)) {
       for (const t of targets) {
         const trueNext: number[] = [];
@@ -981,22 +1614,77 @@ export function analyzeRecords(
             falseNext.reduce((a, b) => a + b, 0) / falseNext.length;
           const diff = round1(avgTrue - avgFalse);
 
-          if (Math.abs(diff) >= 0.2) {
+          if (Math.abs(diff) >= 0.25) {
             const isPos = diff > 0;
             const sign = isPos ? "+" : "";
-            lagImpacts.push({
+            const unitSuffix = t.key === "focusHours" ? " ч" : "";
+            lagCandidates.push({
               factorLabel: `${hName} (сегодня)`,
               targetLabel: `${t.name} (завтра)`,
-              deltaOrR: `${sign}${diff.toFixed(1)}`,
+              deltaOrR: `${sign}${diff.toFixed(1)}${unitSuffix}`,
               isPositive: isPos,
               sampleCount: trueNext.length + falseNext.length,
               description: `Наблюдаемая связь на следующий день: среднее ${avgTrue.toFixed(1)} против ${avgFalse.toFixed(1)}`,
+              sortScore: Math.abs(diff),
             });
           }
         }
       }
     }
+
+    // 3b. Числовые факторы сегодня -> метрики завтра (Спирмен)
+    const numericLagSpecs: Array<{
+      curKey: NumericMetricKey;
+      curLabel: string;
+      nextKey: NumericMetricKey;
+      nextLabel: string;
+    }> = [
+      { curKey: "focusHours", curLabel: "Фокус", nextKey: "energy", nextLabel: "Энергия" },
+      { curKey: "focusHours", curLabel: "Фокус", nextKey: "focusHours", nextLabel: "Фокус" },
+      { curKey: "bedtimeHour", curLabel: "Отбой", nextKey: "energy", nextLabel: "Энергия" },
+      { curKey: "bedtimeHour", curLabel: "Отбой", nextKey: "focusHours", nextLabel: "Фокус" },
+      { curKey: "socialMinutes", curLabel: "Соцсети", nextKey: "focusHours", nextLabel: "Фокус" },
+      { curKey: "socialMinutes", curLabel: "Соцсети", nextKey: "energy", nextLabel: "Энергия" },
+      { curKey: "screenHours", curLabel: "Экран", nextKey: "sleepHours", nextLabel: "Сон" },
+      { curKey: "workoutSetsCount", curLabel: "Подходы трен.", nextKey: "energy", nextLabel: "Энергия" },
+      { curKey: "workoutTonnageKg", curLabel: "Тоннаж трен.", nextKey: "energy", nextLabel: "Энергия" },
+      { curKey: "dayProgressPct", curLabel: "План дня", nextKey: "score", nextLabel: "Оценка" },
+      { curKey: "valuesActionsCount", curLabel: "Ценности", nextKey: "score", nextLabel: "Оценка" },
+      { curKey: "pagesRead", curLabel: "Чтение", nextKey: "sleepHours", nextLabel: "Сон" },
+    ];
+
+    for (const spec of numericLagSpecs) {
+      const xs: number[] = [];
+      const ys: number[] = [];
+      for (const { cur, next } of consecutivePairs) {
+        const x = cur[spec.curKey];
+        const y = next[spec.nextKey];
+        if (x !== null && y !== null && Number.isFinite(x) && Number.isFinite(y)) {
+          xs.push(x);
+          ys.push(y);
+        }
+      }
+      if (xs.length < 10) continue;
+      const rVal = spearmanCorrelation(xs, ys);
+      if (rVal === null || Math.abs(rVal) < MIN_SIGNIFICANT_R) continue;
+      const roundedR = Math.round(rVal * 100) / 100;
+      const sign = roundedR > 0 ? "+" : "";
+      lagCandidates.push({
+        factorLabel: `${spec.curLabel} (сегодня)`,
+        targetLabel: `${spec.nextLabel} (завтра)`,
+        deltaOrR: `r = ${sign}${roundedR.toFixed(2)}`,
+        isPositive: roundedR > 0,
+        sampleCount: xs.length,
+        description: `Корреляция Спирмена на следующий день · n = ${xs.length} парных дней`,
+        sortScore: Math.abs(roundedR) * 2,
+      });
+    }
   }
+
+  lagCandidates.sort((a, b) => b.sortScore - a.sortScore);
+  const lagImpacts: LagImpact[] = lagCandidates
+    .slice(0, 10)
+    .map(({ sortScore: _s, ...rest }) => rest);
 
   // ─── 4. Сравнение по лимиту соцсетей ────────────────────────────────────
   const socialLimitMin =
@@ -1033,7 +1721,6 @@ export function analyzeRecords(
       const avgOver = overVals.reduce((a, b) => a + b, 0) / overVals.length;
       const delta = round1(avgUnder - avgOver);
 
-      const metricText = t.key === "score" ? "оценка дня" : "энергия";
       const comparison = delta > 0 ? "выше" : "ниже";
       const absDelta = Math.abs(delta).toFixed(1);
       const signedText = delta > 0 ? `+${absDelta}` : `-${absDelta}`;
@@ -1047,8 +1734,8 @@ export function analyzeRecords(
         daysUnder: underVals.length,
         daysOver: overVals.length,
         summary:
-          `При удержании лимита соцсетей (≤${socialLimitMin} мин) средняя ${metricText} ` +
-          `${comparison} на ${signedText} балла ` +
+          `При удержании лимита соцсетей (≤${socialLimitMin} мин) средняя ${t.shortName} ` +
+          `${comparison} на ${signedText} ${t.unit} ` +
           `(${underVals.length} дн. нормы / ${overVals.length} дн. превышения)`,
       });
     }
@@ -1079,11 +1766,12 @@ export function analyzeRecords(
       tracked.length > 0 ? Math.round((under.length / tracked.length) * 100) : 0,
   };
 
-  // ─── 6. Сравнение «Дни рекордов в тренировках против остальных дней» ─────
+  // ─── 6. Сравнение «Дни рекордов в тренировках против обычных тренировок» ─
   const recordDaysReport = analyzeRecordDaysComparisons(
     slice,
     options.recordDatesSet ?? new Set<string>(),
-    options.workoutDatesSet ?? new Set<string>()
+    options.workoutDatesSet ?? new Set<string>(),
+    allRecordsByDate
   );
 
   return {
@@ -1091,8 +1779,8 @@ export function analyzeRecords(
     totalRecords: slice.length,
     topCorrelations: correlations,
     insufficientWhitelistedCount: insufficientCount,
-    topHabitImpacts: habitImpacts.slice(0, 10),
-    lagImpacts: lagImpacts.slice(0, 8),
+    topHabitImpacts: habitImpacts.slice(0, 12),
+    lagImpacts,
     socialLimitInsights,
     socialStats,
     recordDaysReport,

@@ -1,5 +1,9 @@
 import { App, TFile, normalizePath } from "obsidian";
-import { ExerciseLoadType, ExerciseVariantSpec } from "./types";
+import {
+  ExerciseLoadType,
+  ExerciseVariantSpec,
+  WorkoutDayMetrics,
+} from "./types";
 
 const MIN_VALID_DATE_ISO = "2000-01-01";
 
@@ -99,7 +103,21 @@ interface WorkoutSessionParsed {
   path: string;
   dateISO: string;
   startOrderMs: number;
+  durationMin: number | null;
   sets: ParsedSetItem[];
+}
+
+function parsePositiveDuration(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 600) {
+    return r2(v);
+  }
+  if (typeof v === "string") {
+    const s = v.trim().replace(",", ".");
+    if (!s) return null;
+    const n = Number(s);
+    if (Number.isFinite(n) && n > 0 && n <= 600) return r2(n);
+  }
+  return null;
 }
 
 function todayLocalISO(): string {
@@ -159,6 +177,7 @@ function parseSetsFromWorkoutText(content: string): ParsedSetItem[] {
 export interface WorkoutHistoryScanResult {
   recordDaySummariesByDate: Map<string, string[]>;
   workoutDatesSet: Set<string>;
+  workoutMetricsByDate: Map<string, WorkoutDayMetrics>;
 }
 
 /**
@@ -179,6 +198,7 @@ export async function detectWorkoutRecordDays(
     file: TFile;
     dateISO: string;
     startStr: string;
+    durationMin: number | null;
   }> = [];
 
   for (const file of app.vault.getMarkdownFiles()) {
@@ -197,7 +217,8 @@ export async function detectWorkoutRecordDays(
     if (!dateISO) continue;
 
     const startStr = cleanText(fm["начало"]);
-    candidateFiles.push({ file, dateISO, startStr });
+    const durationMin = parsePositiveDuration(fm["длительность_мин"]);
+    candidateFiles.push({ file, dateISO, startStr, durationMin });
   }
 
   const parsedSessions: WorkoutSessionParsed[] = [];
@@ -209,7 +230,7 @@ export async function detectWorkoutRecordDays(
       continue;
     }
     const sets = parseSetsFromWorkoutText(content);
-    if (sets.length === 0) continue;
+    if (sets.length === 0 && item.durationMin === null) continue;
 
     const parts = item.dateISO.split("-").map(Number);
     const baseMs = Date.UTC(parts[0] ?? 2000, (parts[1] ?? 1) - 1, parts[2] ?? 1);
@@ -218,6 +239,7 @@ export async function detectWorkoutRecordDays(
       path: item.file.path,
       dateISO: item.dateISO,
       startOrderMs: baseMs + parseStartOffsetMs(item.startStr),
+      durationMin: item.durationMin,
       sets,
     });
   }
@@ -237,6 +259,7 @@ export async function detectWorkoutRecordDays(
   }
 
   const workoutDatesSet = new Set<string>(sessionsByDate.keys());
+  const workoutMetricsByDate = new Map<string, WorkoutDayMetrics>();
   const recordDaySummariesByDate = new Map<string, string[]>();
   const bestRepsByVariant = new Map<string, number>();
 
@@ -256,8 +279,34 @@ export async function detectWorkoutRecordDays(
       }
     >();
 
+    let durationSum = 0;
+    let hasDuration = false;
+    let setsCount = 0;
+    let totalReps = 0;
+    let totalHoldSec = 0;
+    let weightedSetsCount = 0;
+    let tonnageKg = 0;
+
     for (const sess of daySessions) {
+      if (sess.durationMin !== null) {
+        durationSum += sess.durationMin;
+        hasDuration = true;
+      }
       for (const s of sess.sets) {
+        setsCount += 1;
+        if (s.unit === "повт.") {
+          totalReps += s.value;
+          if (s.spec.loadType === "weighted" && s.spec.weight !== null) {
+            weightedSetsCount += 1;
+            tonnageKg += s.value * s.spec.weight;
+          }
+        } else {
+          totalHoldSec += s.value;
+          if (s.spec.loadType === "weighted" && s.spec.weight !== null) {
+            weightedSetsCount += 1;
+          }
+        }
+
         let grp = dayVariantGroups.get(s.spec.key);
         if (!grp) {
           grp = { spec: s.spec, unit: s.unit, values: [] };
@@ -266,6 +315,16 @@ export async function detectWorkoutRecordDays(
         grp.values.push(s.value);
       }
     }
+
+    workoutMetricsByDate.set(dateISO, {
+      sessionsCount: daySessions.length,
+      durationMin: hasDuration ? r2(durationSum) : null,
+      setsCount,
+      totalReps: r2(totalReps),
+      totalHoldSec: r2(totalHoldSec),
+      weightedSetsCount,
+      tonnageKg: r2(tonnageKg),
+    });
 
     const dayRecords: string[] = [];
 
@@ -295,7 +354,7 @@ export async function detectWorkoutRecordDays(
     }
   }
 
-  return { recordDaySummariesByDate, workoutDatesSet };
+  return { recordDaySummariesByDate, workoutDatesSet, workoutMetricsByDate };
 }
 
 /**

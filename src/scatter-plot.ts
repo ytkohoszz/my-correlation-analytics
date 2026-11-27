@@ -1,10 +1,23 @@
 import { ScatterPoint } from "./types";
 
+export interface ScatterPlotOptions {
+  xIsTimeHour?: boolean;
+  xIsBinary?: boolean;
+}
+
+function formatHourOfDay(hourVal: number): string {
+  const totalMin = ((Math.round(hourVal * 60) % 1440) + 1440) % 1440;
+  const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
+  const mm = String(totalMin % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export function renderScatterPlotSvg(
   points: ScatterPoint[],
   labelX: string,
   labelY: string,
-  r: number
+  r: number,
+  options: ScatterPlotOptions = {}
 ): SVGSVGElement {
   const width = 320;
   const height = 180;
@@ -72,8 +85,17 @@ export function renderScatterPlotSvg(
     circle.setAttribute("r", "3.5");
     circle.setAttribute("class", "mca-scatter-dot");
 
+    const formattedX = options.xIsTimeHour
+      ? formatHourOfDay(p.x)
+      : options.xIsBinary
+        ? p.x >= 0.5
+          ? "Да"
+          : "Нет"
+        : String(Math.round(p.x * 100) / 100);
+    const formattedY = String(Math.round(p.y * 100) / 100);
+
     const tip = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    tip.textContent = `${p.dateISO}: ${labelX} = ${p.x}, ${labelY} = ${p.y}`;
+    tip.textContent = `${p.dateISO}: ${labelX} = ${formattedX}, ${labelY} = ${formattedY}`;
     circle.appendChild(tip);
 
     svg.appendChild(circle);

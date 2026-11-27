@@ -8,7 +8,7 @@ import {
   MIN_SIGNIFICANT_R,
 } from "./engine";
 import { renderScatterPlotSvg } from "./scatter-plot";
-import { detectWorkoutRecordDays, r2 } from "./workout-pr";
+import { r2 } from "./workout-pr";
 import type MyCorrelationAnalyticsPlugin from "./main";
 
 const DEFAULT_VISIBLE_HABITS = 6;
@@ -24,6 +24,23 @@ function cleanLagPart(label: string): string {
 function extractPairMeans(description: string): string {
   const m = description.match(/(\d+(?:[.,]\d+)?)\s+против\s+(\d+(?:[.,]\d+)?)/);
   return m ? `${m[1]} / ${m[2]}` : "";
+}
+
+function formatHourOfDay(hourVal: number): string {
+  const totalMin = ((Math.round(hourVal * 60) % 1440) + 1440) % 1440;
+  const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
+  const mm = String(totalMin % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function formatHourDeltaHuman(deltaHours: number): string {
+  const totalMin = Math.round(Math.abs(deltaHours) * 60);
+  if (totalMin === 0) return "0 мин";
+  const sign = deltaHours > 0 ? "+" : "-";
+  if (totalMin < 60) return `${sign}${totalMin} мин`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? `${sign}${h} ч ${m} мин` : `${sign}${h} ч`;
 }
 
 export class CorrelationReportModal extends Modal {
@@ -58,13 +75,10 @@ export class CorrelationReportModal extends Modal {
   }
 
   private async reloadExternalData(): Promise<void> {
-    const [scan, recordsWithValues] = await Promise.all([
-      detectWorkoutRecordDays(this.app, this.plugin.settings.workoutsFolder),
-      this.plugin.getRawRecordsAsync(),
-    ]);
-    this.recordDatesSet = new Set(scan.recordDaySummariesByDate.keys());
-    this.workoutDatesSet = scan.workoutDatesSet;
-    this.allRecords = recordsWithValues;
+    const bundle = await this.plugin.loadExternalAnalyticsBundle();
+    this.recordDatesSet = bundle.recordDatesSet;
+    this.workoutDatesSet = bundle.workoutDatesSet;
+    this.allRecords = bundle.records;
   }
 
   private renderModal(): void {
@@ -213,7 +227,11 @@ export class CorrelationReportModal extends Modal {
           item.points,
           item.metricA,
           item.metricB,
-          item.r
+          item.r,
+          {
+            xIsTimeHour: item.id.startsWith("bedtime_"),
+            xIsBinary: item.kind === "mean_diff",
+          }
         );
         plotHost.appendChild(svg);
       }
@@ -266,23 +284,29 @@ export class CorrelationReportModal extends Modal {
         },
       });
 
+      const targetTitle =
+        item.targetMetric === "score"
+          ? "Оценка"
+          : item.targetMetric === "energy"
+            ? "Энергия"
+            : "Фокус";
+      const unitSuffix = item.targetMetric === "focusHours" ? " ч" : "";
+
       row.createSpan({
         cls: "mca-row-label",
-        text: `${item.habitName} → ${
-          item.targetMetric === "score" ? "Оценка" : "Энергия"
-        }`,
+        text: `${item.habitName} → ${targetTitle}`,
       });
 
       const right = row.createDiv({ cls: "mca-row-right" });
       right.createSpan({
         cls: "mca-row-meta",
-        text: `${item.avgWhenTrue.toFixed(1)} / ${item.avgWhenFalse.toFixed(1)}`,
+        text: `${item.avgWhenTrue.toFixed(1)} / ${item.avgWhenFalse.toFixed(1)}${unitSuffix}`,
       });
 
       const isUp = item.delta > 0;
       right.createSpan({
         cls: `mca-badge ${isUp ? "is-up" : "is-down"}`,
-        text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}`,
+        text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}${unitSuffix}`,
       });
     });
 
@@ -323,9 +347,10 @@ export class CorrelationReportModal extends Modal {
       });
 
       const right = row.createDiv({ cls: "mca-row-right" });
-      if (means) {
-        right.createSpan({ cls: "mca-row-meta", text: means });
-      }
+      right.createSpan({
+        cls: "mca-row-meta",
+        text: means || `n=${lag.sampleCount}`,
+      });
       right.createSpan({
         cls: `mca-badge ${lag.isPositive ? "is-up" : "is-down"}`,
         text: lag.deltaOrR,
@@ -370,21 +395,29 @@ export class CorrelationReportModal extends Modal {
         },
       });
 
+      const socialTargetLabel =
+        item.metric === "score"
+          ? "Оценка дня"
+          : item.metric === "energy"
+            ? "Энергия"
+            : "Глубокая работа";
+      const unitSuffix = item.metric === "focusHours" ? " ч" : "";
+
       row.createSpan({
         cls: "mca-row-label",
-        text: item.metric === "score" ? "Оценка дня" : "Энергия",
+        text: socialTargetLabel,
       });
 
       const right = row.createDiv({ cls: "mca-row-right" });
       right.createSpan({
         cls: "mca-row-meta",
-        text: `${item.avgUnderLimit.toFixed(1)} / ${item.avgOverLimit.toFixed(1)}`,
+        text: `${item.avgUnderLimit.toFixed(1)} / ${item.avgOverLimit.toFixed(1)}${unitSuffix}`,
       });
 
       const isUp = item.delta > 0;
       right.createSpan({
         cls: `mca-badge ${isUp ? "is-up" : "is-down"}`,
-        text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}`,
+        text: `${isUp ? "+" : ""}${item.delta.toFixed(1)}${unitSuffix}`,
       });
     });
   }
@@ -419,9 +452,13 @@ export class CorrelationReportModal extends Modal {
       text: "Дни рекордов",
     });
 
+    const prHintText =
+      rec.comparisonBaseline === "workout_days"
+        ? `${rec.totalRecordDaysInPeriod} из ${rec.totalWorkoutDaysInPeriod} трен.`
+        : `${rec.totalRecordDaysInPeriod} из ${report.totalRecords} дн.`;
     headerBtn.createSpan({
       cls: "mca-sec-hint",
-      text: `${rec.totalRecordDaysInPeriod} из ${report.totalRecords} дн.`,
+      text: prHintText,
     });
 
     const collapseWrap = section.createDiv({
@@ -460,7 +497,9 @@ export class CorrelationReportModal extends Modal {
     const trH = thead.createEl("tr");
     trH.createEl("th", { text: "Показатель" });
     trH.createEl("th", { text: "Рекорд" });
-    trH.createEl("th", { text: "Обычный" });
+    trH.createEl("th", {
+      text: rec.comparisonBaseline === "workout_days" ? "Обычн. трен." : "Обычный",
+    });
     trH.createEl("th", { text: "Δ" });
 
     const tbody = table.createEl("tbody");
@@ -482,6 +521,7 @@ export class CorrelationReportModal extends Modal {
       const fmtVal = (val: number | null) => {
         if (val === null) return "—";
         if (row.kind === "habit_pct") return `${Math.round(val)}%`;
+        if (row.key === "bedtimeHour") return formatHourOfDay(val);
         return `${r2(val).toLocaleString("ru-RU")} ${row.unit}`;
       };
 
@@ -500,6 +540,10 @@ export class CorrelationReportModal extends Modal {
       } else {
         const sign = row.delta > 0 ? "+" : "";
         const unitSuffix = row.kind === "habit_pct" ? "%" : ` ${row.unit}`;
+        const deltaText =
+          row.key === "bedtimeHour"
+            ? formatHourDeltaHuman(row.delta)
+            : `${sign}${r2(row.delta).toLocaleString("ru-RU")}${unitSuffix}`;
         const isGood =
           row.delta === 0
             ? null
@@ -510,7 +554,7 @@ export class CorrelationReportModal extends Modal {
           cls:
             "mca-badge" +
             (isGood === true ? " is-up" : isGood === false ? " is-down" : ""),
-          text: `${sign}${r2(row.delta).toLocaleString("ru-RU")}${unitSuffix}`,
+          text: deltaText,
         });
       }
     }

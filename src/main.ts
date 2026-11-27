@@ -1,5 +1,13 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
-import { collectDailyRecords, readValuesCompassIndex } from "./data-collector";
+import {
+  collectDailyRecords,
+  FocusFallbackIndex,
+  ReadingLogIndex,
+  readFocusSectionFallbackIndex,
+  readReadingLogIndex,
+  readValuesCompassIndex,
+  ValuesCompassDailyIndex,
+} from "./data-collector";
 import { analyzeRecords } from "./engine";
 import { CorrelationReportModal } from "./report-modal";
 import {
@@ -11,7 +19,14 @@ import {
 import {
   detectWorkoutRecordDays,
   syncRecordFlagsToDiaryFrontmatter,
+  WorkoutHistoryScanResult,
 } from "./workout-pr";
+
+export interface ExternalAnalyticsBundle {
+  records: DailyRecord[];
+  recordDatesSet: Set<string>;
+  workoutDatesSet: Set<string>;
+}
 
 function migrateSettings(raw: unknown): CorrelationAnalyticsSettings {
   const s =
@@ -38,6 +53,10 @@ function migrateSettings(raw: unknown): CorrelationAnalyticsSettings {
       typeof s["valuesCompassPath"] === "string" && s["valuesCompassPath"].trim()
         ? s["valuesCompassPath"].trim()
         : DEFAULT_SETTINGS.valuesCompassPath,
+    readingLogPath:
+      typeof s["readingLogPath"] === "string" && s["readingLogPath"].trim()
+        ? s["readingLogPath"].trim()
+        : DEFAULT_SETTINGS.readingLogPath,
   };
 }
 
@@ -112,6 +131,19 @@ class CorrelationSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Журнал чтения (JSON)")
+      .setDesc("Резервный источник прочитанных страниц из my-epub-reader. По умолчанию: _system/reading-log.json")
+      .addText((text) =>
+        text
+          .setValue(this.plugin.settings.readingLogPath)
+          .onChange(async (val) => {
+            this.plugin.settings.readingLogPath =
+              val.trim() || DEFAULT_SETTINGS.readingLogPath;
+            await this.plugin.saveSettingsData();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("Записать метки рекордов в свойства ежедневника (необязательно)")
       .setDesc(
         "Аналитика вычисляет дни рекордов на лету без изменения заметок. Эта кнопка при желании пропишет «рекорд_тренировки: true» и «рекорды_упражнений» в заметки ежедневника через processFrontMatter"
@@ -140,6 +172,12 @@ class CorrelationSettingTab extends PluginSettingTab {
 
 export default class MyCorrelationAnalyticsPlugin extends Plugin {
   public settings: CorrelationAnalyticsSettings = { ...DEFAULT_SETTINGS };
+  private externalCache: {
+    valuesIndex: ValuesCompassDailyIndex;
+    readingLogIndex: ReadingLogIndex;
+    focusFallbackIndex: FocusFallbackIndex;
+    workoutScan: WorkoutHistoryScanResult;
+  } | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettingsData();
@@ -157,6 +195,10 @@ export default class MyCorrelationAnalyticsPlugin extends Plugin {
       },
     });
 
+    this.app.workspace.onLayoutReady(() => {
+      void this.refreshExternalCache();
+    });
+
     (window as unknown as Record<string, unknown>).__myCorrelationAnalytics = this;
   }
 
@@ -171,40 +213,82 @@ export default class MyCorrelationAnalyticsPlugin extends Plugin {
 
   async saveSettingsData(): Promise<void> {
     await this.saveData(this.settings);
+    this.externalCache = null;
+  }
+
+  private async refreshExternalCache(): Promise<{
+    valuesIndex: ValuesCompassDailyIndex;
+    readingLogIndex: ReadingLogIndex;
+    focusFallbackIndex: FocusFallbackIndex;
+    workoutScan: WorkoutHistoryScanResult;
+  }> {
+    const [valuesIndex, readingLogIndex, focusFallbackIndex, workoutScan] =
+      await Promise.all([
+        readValuesCompassIndex(this.app, this.settings.valuesCompassPath),
+        readReadingLogIndex(this.app, this.settings.readingLogPath),
+        readFocusSectionFallbackIndex(this.app, this.settings.diaryFolder),
+        detectWorkoutRecordDays(this.app, this.settings.workoutsFolder),
+      ]);
+    this.externalCache = {
+      valuesIndex,
+      readingLogIndex,
+      focusFallbackIndex,
+      workoutScan,
+    };
+    return this.externalCache;
   }
 
   public getRawRecords(): DailyRecord[] {
+    const cache = this.externalCache;
     return collectDailyRecords(this.app, this.settings.diaryFolder, {
       socialLimitMin: this.settings.socialLimitMin,
+      valuesIndex: cache?.valuesIndex ?? null,
+      readingLogIndex: cache?.readingLogIndex ?? null,
+      focusFallbackIndex: cache?.focusFallbackIndex ?? null,
+      workoutDatesSet: cache?.workoutScan.workoutDatesSet ?? null,
+      workoutMetricsByDate: cache?.workoutScan.workoutMetricsByDate ?? null,
     });
+  }
+
+  public async loadExternalAnalyticsBundle(): Promise<ExternalAnalyticsBundle> {
+    const cache = await this.refreshExternalCache();
+    const records = collectDailyRecords(this.app, this.settings.diaryFolder, {
+      socialLimitMin: this.settings.socialLimitMin,
+      valuesIndex: cache.valuesIndex,
+      readingLogIndex: cache.readingLogIndex,
+      focusFallbackIndex: cache.focusFallbackIndex,
+      workoutDatesSet: cache.workoutScan.workoutDatesSet,
+      workoutMetricsByDate: cache.workoutScan.workoutMetricsByDate,
+    });
+    return {
+      records,
+      recordDatesSet: new Set(cache.workoutScan.recordDaySummariesByDate.keys()),
+      workoutDatesSet: cache.workoutScan.workoutDatesSet,
+    };
   }
 
   public async getRawRecordsAsync(): Promise<DailyRecord[]> {
-    const valuesIndex = await readValuesCompassIndex(
-      this.app,
-      this.settings.valuesCompassPath
-    );
-    return collectDailyRecords(this.app, this.settings.diaryFolder, {
-      socialLimitMin: this.settings.socialLimitMin,
-      valuesIndex,
-    });
+    const bundle = await this.loadExternalAnalyticsBundle();
+    return bundle.records;
   }
 
   public async getReportAsync(days: number = 30): Promise<AnalyticsReport> {
-    const [records, scan] = await Promise.all([
-      this.getRawRecordsAsync(),
-      detectWorkoutRecordDays(this.app, this.settings.workoutsFolder),
-    ]);
-    return analyzeRecords(records, days, {
-      recordDatesSet: new Set(scan.recordDaySummariesByDate.keys()),
-      workoutDatesSet: scan.workoutDatesSet,
+    const bundle = await this.loadExternalAnalyticsBundle();
+    return analyzeRecords(bundle.records, days, {
+      recordDatesSet: bundle.recordDatesSet,
+      workoutDatesSet: bundle.workoutDatesSet,
       socialLimitMin: this.settings.socialLimitMin,
     });
   }
 
   public getReport(days: number = 30): AnalyticsReport {
     const records = this.getRawRecords();
+    const scan = this.externalCache?.workoutScan;
     return analyzeRecords(records, days, {
+      recordDatesSet: scan
+        ? new Set(scan.recordDaySummariesByDate.keys())
+        : undefined,
+      workoutDatesSet: scan?.workoutDatesSet,
       socialLimitMin: this.settings.socialLimitMin,
     });
   }

@@ -1,13 +1,13 @@
 {
   "name": "obsidian-sample-plugin",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "This is a sample plugin for Obsidian (https://obsidian.md)",
   "main": "main.js",
   "type": "module",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node node_modules/typescript/bin/tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "version": "0.6.6",
+    "version": "0.6.7",
     "lint": "eslint ."
   },
   "keywords": [],
